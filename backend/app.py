@@ -1,5 +1,13 @@
 import os
-from flask import Flask, send_from_directory, request
+from flask import Flask, send_from_directory, request, jsonify
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 from flask_cors import CORS
 from config import Config
 from routes.upload import upload_bp
@@ -15,7 +23,17 @@ from routes.study_toolkit import study_toolkit_bp
 app = Flask(__name__)
 # Configure CORS for production
 allowed_origins = os.getenv('ALLOWED_ORIGINS', '*').split(',')
-CORS(app, resources={r"/*": {"origins": allowed_origins}})
+CORS(app, resources={
+    r"/*": {
+        "origins": allowed_origins,
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "Accept"]
+    }
+})
+
+@app.route('/uploads/<path:filename>')
+def serve_uploads(filename):
+    return send_from_directory(Config.UPLOAD_FOLDER, filename)
 
 app.config['MAX_CONTENT_LENGTH'] = Config.MAX_FILE_SIZE
 
