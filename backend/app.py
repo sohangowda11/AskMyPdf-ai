@@ -44,6 +44,15 @@ def serve_upload(filename):
     )
 
 
+@app.route('/')
+def home():
+    return {
+        'status': 'online',
+        'message': 'AskMyPDF AI Intelligence Backend is running',
+        'version': '1.0.0',
+        'api_status': 'healthy'
+    }, 200
+
 @app.route('/health')
 def health():
     return {'status': 'ok', 'message': 'AskMyPDF AI Backend is running'}
