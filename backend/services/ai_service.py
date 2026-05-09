@@ -130,7 +130,11 @@ def ask_question(question, relevant, conversation_history=None):
         "content": f"Multi-Document Context:\n{context}\n\nQuestion: {question}"
     })
 
-    response = _run_completion(get_primary_client(), messages, temperature=0.3, max_tokens=1200)
+    try:
+        response = _run_completion(get_primary_client(), messages, temperature=0.3, max_tokens=1200)
+    except Exception as e:
+        print(f"Primary AI failed, falling back to secondary: {str(e)}")
+        response = _run_completion(get_secondary_client(), messages, temperature=0.3, max_tokens=1200)
 
     answer = response.choices[0].message.content
     # Include filename in sources
@@ -171,7 +175,11 @@ def summarize(full_text):
         }
     ]
 
-    response = _run_completion(get_primary_client(), messages, temperature=0.3, max_tokens=800)
+    try:
+        response = _run_completion(get_primary_client(), messages, temperature=0.3, max_tokens=800)
+    except Exception as e:
+        print(f"Primary Summarization failed, falling back to secondary: {str(e)}")
+        response = _run_completion(get_secondary_client(), messages, temperature=0.3, max_tokens=800)
 
     return response.choices[0].message.content
 
@@ -252,7 +260,11 @@ def explain_simply(full_text, user_question=None):
     ]
 
     try:
-        response = _run_completion(get_primary_client(), messages, temperature=0.5, max_tokens=1200)
+        try:
+            response = _run_completion(get_primary_client(), messages, temperature=0.5, max_tokens=1200)
+        except Exception:
+            print("Primary Explanation failed, falling back to secondary...")
+            response = _run_completion(get_secondary_client(), messages, temperature=0.5, max_tokens=1200)
         return response.choices[0].message.content
     except Exception as e:
         print(f"AI Service Error (explain_simply): {str(e)}")
