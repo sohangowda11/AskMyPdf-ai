@@ -19,7 +19,7 @@ def get_quiz():
 
     doc = store.get_document(doc_id)
     if not doc:
-        return jsonify({'error': 'Document not found'}), 404
+        return jsonify({'error': 'Session expired. Please re-upload your PDF to generate a quiz.'}), 404
 
     try:
         full_text = "\n".join([p['text'] for p in doc['pages']])

@@ -25,7 +25,7 @@ def get_summary():
     doc = store.get_document(doc_id)
     if not doc:
         logger.error(f"Document {doc_id} not found in store")
-        return jsonify({'error': 'Document not found in session.'}), 404
+        return jsonify({'error': 'Session expired or document not found. Please re-upload your PDF.'}), 404
 
     try:
         full_text = "\n".join([p['text'] for p in doc.get('pages', [])])

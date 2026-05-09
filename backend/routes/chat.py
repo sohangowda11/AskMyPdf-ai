@@ -40,10 +40,14 @@ def chat():
     # Initialize Multi-PDF Session Manager
     from services.context_manager import get_multi_pdf_session
     session = get_multi_pdf_session(doc_ids)
+    
+    if not session.documents:
+        return jsonify({'error': 'Session expired or documents not found. Please re-upload your PDF(s) to continue.'}), 404
+        
     all_relevant = session.get_combined_context(message)
 
     if not all_relevant:
-        return jsonify({'error': 'No relevant information found across the selected PDFs'}), 404
+        return jsonify({'error': 'No relevant information found across the selected PDFs. Try a different question.'}), 404
 
     conv = store.get_conversation(conv_id)
     if not conv:
