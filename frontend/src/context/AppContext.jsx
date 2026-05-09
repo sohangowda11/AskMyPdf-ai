@@ -191,7 +191,7 @@ export function AppProvider({ children }) {
         created_at: new Date().toISOString(),
       };
 
-      const pdfUrl = `/uploads/${data.filename}`;
+      const pdfUrl = api.getPDFUrl(data.filename);
       console.log(">>> GENERATED PDF URL:", pdfUrl);
 
       dispatch({ type: 'SET_ACTIVE_DOCUMENT', payload: docInfo });
@@ -514,14 +514,14 @@ export function AppProvider({ children }) {
         }));
         dispatch({ type: 'SET_ACTIVE_DOCUMENTS', payload: activeDocs });
         dispatch({ type: 'SET_ACTIVE_DOCUMENT', payload: activeDocs[0] });
-        dispatch({ type: 'SET_PDF_URL', payload: `/uploads/${activeDocs[0].filename}` });
+        dispatch({ type: 'SET_PDF_URL', payload: api.getPDFUrl(activeDocs[0].filename) });
       } else if (data.doc_id && data.filename) {
         dispatch({
           type: 'SET_ACTIVE_DOCUMENT',
           payload: { doc_id: data.doc_id, filename: data.filename, page_count: 0 },
         });
         dispatch({ type: 'SET_ACTIVE_DOCUMENTS', payload: [] });
-        dispatch({ type: 'SET_PDF_URL', payload: `/uploads/${data.filename}` });
+        dispatch({ type: 'SET_PDF_URL', payload: api.getPDFUrl(data.filename) });
       }
     } catch (err) {
       dispatch({ type: 'SET_ERROR', payload: 'Failed to load conversation.' });
@@ -789,7 +789,7 @@ export function AppProvider({ children }) {
 
         dispatch({ type: 'SET_ACTIVE_DOCUMENTS', payload: uniqueActiveDocs });
         dispatch({ type: 'SET_ACTIVE_DOCUMENT', payload: uniqueActiveDocs[0] });
-        dispatch({ type: 'SET_PDF_URL', payload: `/uploads/${uniqueActiveDocs[0].filename}` });
+        dispatch({ type: 'SET_PDF_URL', payload: api.getPDFUrl(uniqueActiveDocs[0].filename) });
         
         const convInfo = {
           conversation_id: data.conversation_id,

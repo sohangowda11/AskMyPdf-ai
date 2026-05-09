@@ -9,6 +9,13 @@ const api = axios.create({
   },
 });
 
+export const getPDFUrl = (filename) => {
+  if (!filename) return null;
+  // Ensure we don't double up slashes
+  const base = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+  return `${base}/uploads/${filename}`;
+};
+
 export async function uploadPDF(file) {
   const formData = new FormData();
   formData.append('file', file);

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ZoomIn, ZoomOut, Maximize2, Download, Search } from 'lucide-react';
 import { useApp } from '../../hooks/useApp';
+import * as api from '../../api/api';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
@@ -37,7 +38,7 @@ export default function PDFViewer() {
           });
           dispatch({ 
             type: 'SET_PDF_URL', 
-            payload: `/uploads/${filename}` 
+            payload: api.getPDFUrl(filename) 
           });
       }
 
