@@ -7,8 +7,11 @@ def get_client(key):
         return OpenAI(api_key=key, base_url="https://generativelanguage.googleapis.com/v1beta/openai/")
     return OpenAI(api_key=key)
 
-primary_client = get_client(Config.GEMINI_API_KEY_PRIMARY)
-secondary_client = get_client(Config.GEMINI_API_KEY_SECONDARY)
+def get_primary_client():
+    return get_client(Config.GEMINI_API_KEY_PRIMARY)
+
+def get_secondary_client():
+    return get_client(Config.GEMINI_API_KEY_SECONDARY)
 
 def _run_completion(c, messages, temperature=0.3, max_tokens=1000):
     is_gemini = hasattr(c, 'base_url') and "generativelanguage" in str(c.base_url)
@@ -24,8 +27,10 @@ def _run_completion(c, messages, temperature=0.3, max_tokens=1000):
         print(f"API Error ({model_name}): {str(e)}")
         raise e
 
-def get_embedding(text, client=secondary_client):
+def get_embedding(text, client=None):
     """Generate embedding for a text chunk using Gemini."""
+    if client is None:
+        client = get_secondary_client()
     try:
         # Limit text for embedding safety
         clean_text = text[:1000].replace("\n", " ")
@@ -125,7 +130,7 @@ def ask_question(question, relevant, conversation_history=None):
         "content": f"Multi-Document Context:\n{context}\n\nQuestion: {question}"
     })
 
-    response = _run_completion(primary_client, messages, temperature=0.3, max_tokens=1200)
+    response = _run_completion(get_primary_client(), messages, temperature=0.3, max_tokens=1200)
 
     answer = response.choices[0].message.content
     # Include filename in sources
@@ -166,7 +171,7 @@ def summarize(full_text):
         }
     ]
 
-    response = _run_completion(primary_client, messages, temperature=0.3, max_tokens=800)
+    response = _run_completion(get_primary_client(), messages, temperature=0.3, max_tokens=800)
 
     return response.choices[0].message.content
 
@@ -191,7 +196,7 @@ def generate_quiz(full_text, num_questions=5):
         }
     ]
 
-    response = _run_completion(primary_client, messages, temperature=0.5, max_tokens=2000)
+    response = _run_completion(get_primary_client(), messages, temperature=0.5, max_tokens=2000)
 
     try:
         content = response.choices[0].message.content.strip()
@@ -247,7 +252,7 @@ def explain_simply(full_text, user_question=None):
     ]
 
     try:
-        response = _run_completion(primary_client, messages, temperature=0.5, max_tokens=1200)
+        response = _run_completion(get_primary_client(), messages, temperature=0.5, max_tokens=1200)
         return response.choices[0].message.content
     except Exception as e:
         print(f"AI Service Error (explain_simply): {str(e)}")
@@ -276,7 +281,7 @@ def rewrite_text(text):
         }
     ]
 
-    response = _run_completion(primary_client, messages, temperature=0.4, max_tokens=800)
+    response = _run_completion(get_primary_client(), messages, temperature=0.4, max_tokens=800)
 
     return response.choices[0].message.content
 
@@ -328,7 +333,7 @@ def generate_study_toolkit(full_text):
     for attempt in range(max_attempts):
         try:
             # Use secondary client for attempt 1, fallback to primary for attempt 2 if needed
-            client_to_use = secondary_client if attempt == 0 else primary_client
+            client_to_use = get_secondary_client() if attempt == 0 else get_primary_client()
             print(f"Study Toolkit: Attempt {attempt + 1}...")
             
             response = _run_completion(client_to_use, messages, temperature=0.5, max_tokens=3000)
@@ -403,7 +408,7 @@ def generate_flashcards(full_text):
     """Generate 5 key concept flashcards from the document."""
     text = full_text[:8000] if len(full_text) > 8000 else full_text
 
-    response = _run_completion(secondary_client, [
+    response = _run_completion(get_secondary_client(), [
         {
             "role": "system",
             "content": (
@@ -497,5 +502,5 @@ def run_advanced_tool(full_text, tool_name):
         }
     ]
 
-    response = _run_completion(secondary_client, messages, temperature=0.4, max_tokens=1500)
+    response = _run_completion(get_secondary_client(), messages, temperature=0.4, max_tokens=1500)
     return response.choices[0].message.content
