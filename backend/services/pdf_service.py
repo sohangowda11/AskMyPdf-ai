@@ -10,18 +10,8 @@ def extract_text(filepath):
         page = doc[page_num]
         text = page.get_text()
         
-        # If text is empty or seems like just gibberish/whitespace, try OCR
-        if not text.strip() or len(text.strip()) < 20:
-            try:
-                import pytesseract
-                from PIL import Image
-                pix = page.get_pixmap()
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                ocr_text = pytesseract.image_to_string(img)
-                if ocr_text.strip():
-                    text = ocr_text
-            except Exception as e:
-                print(f"OCR failed for page {page_num + 1}: {str(e)}")
+        # OCR fallback removed for production stability on Render
+        pass
                 
         if text.strip():
             pages.append({
