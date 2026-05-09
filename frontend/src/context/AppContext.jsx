@@ -58,7 +58,8 @@ function reducer(state, action) {
     case 'SET_QUIZ_LOADING':
       return { ...state, isGeneratingQuiz: action.payload };
     case 'SET_ERROR':
-      return { ...state, error: action.payload };
+      const errMsg = typeof action.payload === 'string' ? action.payload : (action.payload?.error || action.payload?.message || JSON.stringify(action.payload));
+      return { ...state, error: String(errMsg) };
     case 'CLEAR_ERROR':
       return { ...state, error: null };
     case 'SET_CONVERSATIONS':
@@ -164,6 +165,12 @@ export function AppProvider({ children }) {
     }
   }, [state.theme]);
 
+  const showNotification = useCallback((message, type = 'info', duration = 3000) => {
+    const msg = typeof message === 'string' ? message : (message?.error || message?.message || JSON.stringify(message));
+    dispatch({ type: 'SET_NOTIFICATION', payload: { message: String(msg), type } });
+    setTimeout(() => dispatch({ type: 'CLEAR_NOTIFICATION' }), duration);
+  }, []);
+
   const uploadDocument = useCallback(async (file) => {
     dispatch({ type: 'SET_UPLOADING', payload: true });
     dispatch({ type: 'CLEAR_ERROR' });
@@ -213,8 +220,7 @@ export function AppProvider({ children }) {
       };
       dispatch({ type: 'ADD_MESSAGE', payload: welcomeMsg });
 
-      dispatch({ type: 'SET_NOTIFICATION', payload: { message: 'PDF Ready! Entering workspace...', type: 'success' } });
-      setTimeout(() => dispatch({ type: 'CLEAR_NOTIFICATION' }), 3000);
+      showNotification('PDF Ready! Entering workspace...', 'success');
 
       return data;
     } catch (err) {
@@ -230,7 +236,7 @@ export function AppProvider({ children }) {
       }
       
       dispatch({ type: 'SET_ERROR', payload: errorMsg });
-      dispatch({ type: 'SET_NOTIFICATION', payload: { message: errorMsg, type: 'error' } });
+      showNotification(errorMsg, 'error');
       throw err;
     } finally {
       dispatch({ type: 'SET_UPLOADING', payload: false });
@@ -299,8 +305,7 @@ export function AppProvider({ children }) {
     console.log(">>> requestSummary triggered");
     if (!state.activeDocument) {
       console.warn("No active document found for summary");
-      dispatch({ type: 'SET_NOTIFICATION', payload: { message: 'Please upload a PDF first.', type: 'error' } });
-      setTimeout(() => dispatch({ type: 'CLEAR_NOTIFICATION' }), 3000);
+      showNotification('Please upload a PDF first.', 'error');
       return;
     }
     
@@ -330,12 +335,11 @@ export function AppProvider({ children }) {
       console.error(">>> requestSummary Error:", err);
       const errorMsg = err.response?.data?.error || 'Failed to generate summary.';
       dispatch({ type: 'SET_ERROR', payload: errorMsg });
-      dispatch({ type: 'SET_NOTIFICATION', payload: { message: errorMsg, type: 'error' } });
-      setTimeout(() => dispatch({ type: 'CLEAR_NOTIFICATION' }), 3000);
+      showNotification(errorMsg, 'error');
     } finally {
       dispatch({ type: 'SET_SENDING', payload: false });
     }
-  }, [state.activeDocument, state.activeConversation]);
+  }, [state.activeDocument, state.activeConversation, showNotification]);
 
   const requestAdvancedTool = useCallback(async (toolName) => {
     if (!state.activeDocument) return;
@@ -362,20 +366,18 @@ export function AppProvider({ children }) {
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'Failed to process request.';
       dispatch({ type: 'SET_ERROR', payload: errorMsg });
-      dispatch({ type: 'SET_NOTIFICATION', payload: { message: errorMsg, type: 'error' } });
-      setTimeout(() => dispatch({ type: 'CLEAR_NOTIFICATION' }), 3000);
+      showNotification(errorMsg, 'error');
     } finally {
       dispatch({ type: 'SET_SENDING', payload: false });
     }
-  }, [state.activeDocument, state.activeConversation]);
+  }, [state.activeDocument, state.activeConversation, showNotification]);
 
   const requestExplain = useCallback(async () => {
     console.log(">>> REQUEST: Explain PDF (Full Document)");
     
     if (!state.activeDocument) {
       console.warn("No active document found for Explain");
-      dispatch({ type: 'SET_NOTIFICATION', payload: { message: 'Please upload a PDF first.', type: 'error' } });
-      setTimeout(() => dispatch({ type: 'CLEAR_NOTIFICATION' }), 3000);
+      showNotification('Please upload a PDF first.', 'error');
       return;
     }
 
@@ -406,8 +408,7 @@ export function AppProvider({ children }) {
     } catch (err) {
       console.error("API /explain FAILURE:", err);
       const errorMsg = err.response?.data?.error || err.message || 'Unable to explain the document right now.';
-      dispatch({ type: 'SET_NOTIFICATION', payload: { message: errorMsg, type: 'error' } });
-      setTimeout(() => dispatch({ type: 'CLEAR_NOTIFICATION' }), 4000);
+      showNotification(errorMsg, 'error', 4000);
     } finally {
       dispatch({ type: 'SET_SENDING', payload: false });
     }
@@ -458,7 +459,7 @@ export function AppProvider({ children }) {
     } catch (err) {
       console.error("Quiz generation failed:", err);
       const errorMsg = 'Sorry, I couldn\'t generate the quiz right now. Please try again.';
-      dispatch({ type: 'SET_NOTIFICATION', payload: { message: errorMsg, type: 'error' } });
+      showNotification(errorMsg, 'error');
       
       const errMsg = {
         id: 'quiz-error-' + Date.now(),
@@ -471,7 +472,7 @@ export function AppProvider({ children }) {
     } finally {
       dispatch({ type: 'SET_QUIZ_LOADING', payload: false });
     }
-  }, [state.activeDocument]);
+  }, [state.activeDocument, showNotification]);
 
   const requestFlashcards = useCallback(async () => {
     if (!state.activeDocument) return;
@@ -546,8 +547,7 @@ export function AppProvider({ children }) {
           dispatch({ type: 'SET_PDF_URL', payload: null });
         }
       }
-      dispatch({ type: 'SET_NOTIFICATION', payload: { message: 'Conversation deleted', type: 'success' } });
-      setTimeout(() => dispatch({ type: 'CLEAR_NOTIFICATION' }), 3000);
+      showNotification('Conversation deleted', 'success');
     } catch (err) {
       dispatch({ type: 'SET_ERROR', payload: 'Failed to delete conversation.' });
     }
@@ -629,12 +629,12 @@ export function AppProvider({ children }) {
     fetchHistory,
     newAnalysis,
     goHome,
+    showNotification,
     clearAllHistory: async () => {
       try {
         await api.clearAllHistory();
         dispatch({ type: 'CLEAR_ALL_HISTORY' });
-        dispatch({ type: 'SET_NOTIFICATION', payload: { message: 'All history and files cleared.', type: 'success' } });
-        setTimeout(() => dispatch({ type: 'CLEAR_NOTIFICATION' }), 3000);
+        showNotification('All history and files cleared.', 'success');
       } catch (err) {
         dispatch({ type: 'SET_ERROR', payload: 'Failed to clear history.' });
       }
@@ -745,8 +745,7 @@ export function AppProvider({ children }) {
       } catch (err) {
         const errorMsg = err.response?.data?.error || 'Failed to simplify content.';
         dispatch({ type: 'SET_ERROR', payload: errorMsg });
-        dispatch({ type: 'SET_NOTIFICATION', payload: { message: errorMsg, type: 'error' } });
-        setTimeout(() => dispatch({ type: 'CLEAR_NOTIFICATION' }), 3000);
+        showNotification(errorMsg, 'error');
       } finally {
         dispatch({ type: 'SET_SENDING', payload: false });
       }

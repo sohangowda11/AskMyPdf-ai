@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+const API_URL = import.meta.env.VITE_API_URL || 'https://askmypdf-ai-2c63.onrender.com';
 
 const api = axios.create({
   baseURL: API_URL,

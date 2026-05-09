@@ -126,7 +126,9 @@ function NotificationToast() {
       exit={{ opacity: 0, y: -40, scale: 0.9 }}
     >
       <div className={`w-2.5 h-2.5 rounded-full ${state.notification.type === 'error' ? 'bg-white' : 'bg-green-500'} animate-pulse`} />
-      <span className="text-[11px] font-black uppercase tracking-[0.2em]">{state.notification.message}</span>
+      <span className="text-[11px] font-black uppercase tracking-[0.2em]">
+        {typeof state.notification.message === 'string' ? state.notification.message : String(state.notification.message?.message || state.notification.message?.error || JSON.stringify(state.notification.message))}
+      </span>
     </motion.div>
   );
 }

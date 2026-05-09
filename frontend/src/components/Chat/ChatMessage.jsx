@@ -74,7 +74,7 @@ const ChatMessage = memo(({ message }) => {
           <div key={idx} className="flex items-center gap-3 my-4 first:mt-0 pb-1 border-b border-orange-500/10 gpu-accelerated">
             <div className="px-2 py-0.5 bg-orange-500 text-white text-[9px] font-black uppercase tracking-widest rounded">Source</div>
             <p className="text-[13px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-widest">
-              {trimmed.replace('### ', '')}
+              {typeof trimmed === 'string' ? trimmed.replace('### ', '') : JSON.stringify(trimmed).replace('### ', '')}
             </p>
           </div>
         );
@@ -132,11 +132,11 @@ const ChatMessage = memo(({ message }) => {
         }`}>
           {isAi ? (
             <div className="space-y-0.5">
-              {formatContent(displayText)}
+              {formatContent(String(displayText))}
               {isStreaming && <span className="inline-block w-1.5 h-4 bg-orange-500 ml-1 animate-pulse" />}
             </div>
           ) : (
-            <p className="text-[14px] font-bold leading-relaxed">{message.content}</p>
+            <p className="text-[14px] font-bold leading-relaxed">{typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}</p>
           )}
         </div>
 

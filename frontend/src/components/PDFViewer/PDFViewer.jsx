@@ -93,75 +93,93 @@ export default function PDFViewer() {
               // Clear previous marks
               Object.values(markInstances.current).forEach(m => m.unmark());
               
-              // Normalize text for better matching
-              const normalizedText = highlightText
+              // Robust normalization
+              const normalize = (t) => t
                   .replace(/[\u2018\u2019]/g, "'")
                   .replace(/[\u201C\u201D]/g, '"')
+                  .replace(/[\u00AD\u200B\u200C\u200D\FEFF]/g, '') // Remove soft hyphens and hidden chars
                   .replace(/\s+/g, ' ')
                   .trim();
+
+              const normalizedText = normalize(highlightText);
 
               marker.mark(normalizedText, {
                   accuracy: "partially",
                   separateWordSearch: false,
                   acrossElements: true,
                   ignoreJoiners: true,
-                  ignorePunctuation: [":", ";", ",", ".", "-", "(", ")", "[", "]", "{", "}", "?", "!", "'", '"'],
+                  ignorePunctuation: [":", ";", ",", ".", "-", "(", ")", "[", "]", "{", "}", "?", "!", "'", '"', "—", "–"],
+                  wildcards: "enabled", // Allow matching across line breaks better
                   className: "pdf-highlight-glow",
                   done: (count) => {
                       if (count > 0) {
                           setHighlightError(false);
-                          // Scroll first highlight into view
-                          const markEl = pageEl.querySelector('.pdf-highlight-glow');
-                          if (markEl && containerRef.current) {
-                               const container = containerRef.current;
-                               const markTop = markEl.getBoundingClientRect().top;
-                               const containerTop = container.getBoundingClientRect().top;
-                               container.scrollBy({ top: markTop - containerTop - 150, behavior: 'smooth' });
-                          }
+                          scrollToHighlight(pageEl);
                       } else {
-                          // Fallback: Try highlighting just the first 30 chars of normalized text
-                          const shortText = normalizedText.substring(0, 30).trim();
-                          if (shortText.length > 5 && shortText !== normalizedText) {
-                              console.log(">>> FALLBACK HIGHLIGHTING:", shortText);
-                              marker.mark(shortText, {
+                          // Fallback 1: Try without punctuation at all
+                          const noPunctText = normalizedText.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+                          if (noPunctText.length > 10) {
+                              marker.mark(noPunctText, {
                                   accuracy: "partially",
-                                  separateWordSearch: false,
-                                  acrossElements: true,
-                                  ignoreJoiners: true,
-                                  ignorePunctuation: [":", ";", ",", ".", "-", "(", ")", "[", "]", "{", "}", "?", "!", "'", '"'],
                                   className: "pdf-highlight-glow",
-                                  done: (fallbackCount) => {
-                                      if (fallbackCount > 0) {
+                                  done: (count2) => {
+                                      if (count2 > 0) {
                                           setHighlightError(false);
-                                          const markEl = pageEl.querySelector('.pdf-highlight-glow');
-                                          if (markEl && containerRef.current) {
-                                               const container = containerRef.current;
-                                               const markTop = markEl.getBoundingClientRect().top;
-                                               const containerTop = container.getBoundingClientRect().top;
-                                               container.scrollBy({ top: markTop - containerTop - 150, behavior: 'smooth' });
-                                          }
+                                          scrollToHighlight(pageEl);
                                       } else {
-                                          if (lastFailedText.current !== highlightText) {
-                                              setHighlightError(true);
-                                              lastFailedText.current = highlightText;
-                                              setTimeout(() => setHighlightError(false), 3000);
-                                          }
+                                          attemptShortFallback(marker, normalizedText, pageEl);
                                       }
                                   }
                               });
                           } else {
-                              if (lastFailedText.current !== highlightText) {
-                                  setHighlightError(true);
-                                  lastFailedText.current = highlightText;
-                                  setTimeout(() => setHighlightError(false), 3000);
-                              }
+                              attemptShortFallback(marker, normalizedText, pageEl);
                           }
                       }
                   }
               });
           }
       } else if (markInstances.current[pageIndex]) {
-         markInstances.current[pageIndex].unmark();
+          markInstances.current[pageIndex].unmark();
+      }
+  };
+
+  const scrollToHighlight = (pageEl) => {
+      const markEl = pageEl.querySelector('.pdf-highlight-glow');
+      if (markEl && containerRef.current) {
+          const container = containerRef.current;
+          const markTop = markEl.getBoundingClientRect().top;
+          const containerTop = container.getBoundingClientRect().top;
+          container.scrollBy({ top: markTop - containerTop - 150, behavior: 'smooth' });
+      }
+  };
+
+  const attemptShortFallback = (marker, fullText, pageEl) => {
+      // Try highlighting the first 40 chars
+      const shortText = fullText.substring(0, 40).trim();
+      if (shortText.length > 8) {
+          console.log(">>> FALLBACK HIGHLIGHTING:", shortText);
+          marker.mark(shortText, {
+              accuracy: "partially",
+              className: "pdf-highlight-glow",
+              done: (count) => {
+                  if (count > 0) {
+                      setHighlightError(false);
+                      scrollToHighlight(pageEl);
+                  } else {
+                      triggerError(fullText);
+                  }
+              }
+          });
+      } else {
+          triggerError(fullText);
+      }
+  };
+
+  const triggerError = (text) => {
+      if (lastFailedText.current !== text) {
+          setHighlightError(true);
+          lastFailedText.current = text;
+          setTimeout(() => setHighlightError(false), 3000);
       }
   };
 
