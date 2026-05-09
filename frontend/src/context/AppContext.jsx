@@ -406,9 +406,12 @@ export function AppProvider({ children }) {
         throw new Error(data.error || "Malformed API response: 'response' field missing");
       }
     } catch (err) {
-      console.error("API /explain FAILURE:", err);
-      const errorMsg = err.response?.data?.error || err.message || 'Unable to explain the document right now.';
-      showNotification(errorMsg, 'error', 4000);
+      console.error("Summary failed:", err);
+      let errorMsg = err.response?.data?.error || 'Unable to summarize the document right now.';
+      if (err.response?.status === 404) {
+        errorMsg = "Session expired or backend restarted. Please re-upload your PDF to continue.";
+      }
+      showNotification(errorMsg, 'error', 5000);
     } finally {
       dispatch({ type: 'SET_SENDING', payload: false });
     }
