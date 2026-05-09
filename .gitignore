@@ -28,6 +28,8 @@ backend/uploads/
 uploads/
 *.pdf
 temp_embeddings/
+store_data.json
+backend/store_data.json
 
 # IDE & OS
 .vscode/
