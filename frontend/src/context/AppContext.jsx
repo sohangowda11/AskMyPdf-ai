@@ -6,7 +6,6 @@ export const AppContext = createContext(null);
 const initialState = {
   isLoading: true,
   isUploading: false,
-  uploadProgress: 0,
   isSending: false,
   isGeneratingQuiz: false,
   error: null,
@@ -53,9 +52,7 @@ function reducer(state, action) {
     case 'SET_LOADING':
       return { ...state, isLoading: action.payload };
     case 'SET_UPLOADING':
-      return { ...state, isUploading: action.payload, uploadProgress: action.payload ? state.uploadProgress : 0 };
-    case 'SET_UPLOAD_PROGRESS':
-      return { ...state, uploadProgress: action.payload };
+      return { ...state, isUploading: action.payload };
     case 'SET_SENDING':
       return { ...state, isSending: action.payload };
     case 'SET_QUIZ_LOADING':
@@ -180,9 +177,7 @@ export function AppProvider({ children }) {
     console.log(">>> STARTING PDF UPLOAD:", file.name);
     
     try {
-      const data = await api.uploadPDF(file, (progress) => {
-        dispatch({ type: 'SET_UPLOAD_PROGRESS', payload: progress });
-      });
+      const data = await api.uploadPDF(file);
       console.log(">>> UPLOAD API RESPONSE:", data);
 
       if (!data || !data.doc_id || !data.filename) {

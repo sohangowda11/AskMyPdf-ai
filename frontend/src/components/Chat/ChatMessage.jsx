@@ -109,7 +109,7 @@ const ChatMessage = memo(({ message }) => {
 
   return (
     <motion.div
-      className={`flex items-start gap-4 ${isAi ? '' : 'flex-row-reverse'} gpu-accelerated`}
+      className={`flex items-start gap-4 mb-8 ${isAi ? '' : 'flex-row-reverse'} gpu-accelerated`}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
