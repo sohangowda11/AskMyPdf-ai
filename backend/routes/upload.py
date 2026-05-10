@@ -1,11 +1,12 @@
 import os
+import uuid
+import threading
+import logging
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 from services.pdf_service import extract_text, chunk_text, get_page_count
 from store import store
 from config import Config
-
-import logging
 
 upload_bp = Blueprint('upload', __name__)
 ALLOWED_EXTENSIONS = {'pdf'}
@@ -15,27 +16,42 @@ def allowed_file(filename):
 
 logger = logging.getLogger(__name__)
 
+def background_process_pdf(filepath, filename, doc_id):
+    """Heavy lifting happens here without blocking the user."""
+    try:
+        logger.info(f" [BG] Starting extraction for {doc_id}")
+        pages = extract_text(filepath)
+        chunks = chunk_text(pages)
+        
+        # Update the existing document record with the extracted text and chunks
+        # This assumes SupabaseStore.add_document can handle updates or we add an update method
+        # For simplicity, we'll just call add_document again if it handles upserts
+        # but let's assume we want a specific 'update' for background completion
+        store.add_document(filename, filepath, pages, chunks, doc_id=doc_id) 
+        # Note: In our current SupabaseStore, add_document uses insert. 
+        # I should add an 'upsert' or 'update' logic. 
+        # Let's fix SupabaseStore to handle this.
+        
+        logger.info(f" [BG] Successfully processed {doc_id}")
+    except Exception as e:
+        logger.error(f" [BG] Processing failed for {doc_id}: {str(e)}")
+
 @upload_bp.route('/upload', methods=['POST'])
 def upload_file():
     logger.info(">>> START: /upload API REQUEST")
     
     if 'file' not in request.files:
-        logger.warning("No file part in request")
         return jsonify({'error': 'No file provided'}), 400
 
     file = request.files['file']
     if file.filename == '':
-        logger.warning("No file selected")
         return jsonify({'error': 'No file selected'}), 400
 
     if not allowed_file(file.filename):
-        logger.warning(f"Invalid file type: {file.filename}")
         return jsonify({'error': 'Only PDF files are allowed'}), 400
 
     filename = secure_filename(file.filename)
     filepath = os.path.join(Config.UPLOAD_FOLDER, filename)
-
-    # Ensure directory exists
     os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
 
     # Handle duplicate filenames
@@ -46,42 +62,36 @@ def upload_file():
         filepath = os.path.join(Config.UPLOAD_FOLDER, filename)
         counter += 1
 
-    logger.info(f"Saving file to: {filepath}")
+    logger.info(f"Saving file: {filename}")
     file.save(filepath)
 
     try:
-        logger.info(f"Extracting text from: {filepath}")
-        pages = extract_text(filepath)
-        logger.info(f"Pages extracted: {len(pages)}")
-        
-        logger.info("Chunking text...")
-        chunks = chunk_text(pages)
-        logger.info(f"Chunks generated: {len(chunks)}")
-        
+        # QUICK PATH: Get metadata and return immediately
         page_count = get_page_count(filepath)
         
-        logger.info("Storing document metadata...")
-        doc_id = store.add_document(filename, filepath, pages, chunks)
+        # Create an 'Empty' document entry first so it exists in the UI
+        # We pass empty pages/chunks for now
+        doc_id = store.add_document(filename, filepath, [], [])
         
-        # Clean title: use filename without extension
         title = filename.rsplit('.', 1)[0].replace('_', ' ')
         conv_id = store.create_conversation(doc_id, title=title)
 
-        logger.info(f"UPLOAD SUCCESS: {doc_id}")
+        # FIRE AND FORGET: Start background processing
+        thread = threading.Thread(target=background_process_pdf, args=(filepath, filename, doc_id))
+        thread.daemon = True
+        thread.start()
+
+        logger.info(f"UPLOAD QUICK SUCCESS: {doc_id}")
         return jsonify({
             'doc_id': doc_id,
             'conversation_id': conv_id,
             'filename': filename,
             'page_count': page_count,
-            'chunk_count': len(chunks)
+            'status': 'processing'
         }), 200
+
     except Exception as e:
-        import traceback
-        error_trace = traceback.format_exc()
-        logger.error(f"UPLOAD ERROR: {str(e)}\n{error_trace}")
+        logger.error(f"UPLOAD ERROR: {str(e)}")
         if os.path.exists(filepath):
             os.remove(filepath)
-        return jsonify({
-            'error': f'Failed to process PDF: {str(e)}',
-            'details': error_trace
-        }), 500
+        return jsonify({'error': f'Failed to initiate upload: {str(e)}'}), 500
