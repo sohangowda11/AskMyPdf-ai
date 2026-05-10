@@ -213,17 +213,12 @@ export default function DedicatedChatPage() {
         <div className="flex-1 flex flex-col relative overflow-hidden">
           <div className="flex-1 overflow-y-auto pt-10 pb-40 px-6 custom-scrollbar scroll-smooth">
             <div className="max-w-4xl mx-auto space-y-12">
-              {state.messages.length === 0 ? (
-                <div className="h-[60vh] flex flex-col items-center justify-center gap-12">
-                  <div className="flex flex-col items-center text-center max-w-sm">
-                    <div className="w-16 h-16 bg-orange-600 rounded-[28px] flex items-center justify-center text-white shadow-2xl shadow-orange-500/20 mb-8 animate-pulse">
-                      <Sparkles size={32} />
-                    </div>
-                    <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-3 tracking-tight">AI Study Workspace</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 font-bold leading-relaxed uppercase tracking-widest mb-10">Select a prompt to start analyzing</p>
-                    
-                    <motion.button
+              {state.messages.length <= 1 && (
+                <div className="flex flex-col items-center justify-center py-12">
+                   <motion.button
                       onClick={() => generateStudyToolkit()}
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       className="group relative px-8 py-5 bg-gradient-to-r from-orange-600 to-orange-500 rounded-[32px] flex items-center gap-6 shadow-2xl shadow-orange-600/30 overflow-hidden"
@@ -237,17 +232,12 @@ export default function DedicatedChatPage() {
                       </div>
                       <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
                     </motion.button>
-                  </div>
-                  
-                  <div className="w-full max-w-2xl px-4">
-                    <SuggestionChips />
-                  </div>
                 </div>
-              ) : (
-                state.messages.map((msg, i) => (
-                  <ChatMessage key={msg.id || i} message={msg} />
-                ))
               )}
+
+              {state.messages.map((msg, i) => (
+                <ChatMessage key={msg.id || i} message={msg} />
+              ))}
 
               <AnimatePresence>
                 {state.isSending && (
