@@ -312,6 +312,37 @@ export default function DedicatedChatPage() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* GLOBAL CENTER BUTTON - MOVED TO ROOT FOR GUARANTEED CENTERING */}
+      <AnimatePresence>
+        {state.messages.length <= 1 && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none">
+             <motion.button
+                onClick={() => generateStudyToolkit()}
+                initial={{ scale: 0.8, opacity: 0, y: 30 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="pointer-events-auto group relative px-12 py-8 bg-gradient-to-r from-orange-600 to-orange-500 rounded-[48px] flex items-center gap-10 shadow-[0_30px_70px_rgba(234,88,12,0.5)] overflow-hidden border border-white/30 backdrop-blur-2xl"
+              >
+                <div className="flex flex-col items-start text-left relative z-10">
+                  <span className="text-[12px] font-black uppercase tracking-[0.4em] text-orange-100 mb-2 opacity-90">Click here to</span>
+                  <span className="text-3xl font-black uppercase tracking-tight text-white leading-none">Explore More AI<br/>Full Workspace</span>
+                </div>
+                <div className="w-16 h-16 bg-white/20 rounded-3xl flex items-center justify-center text-white backdrop-blur-md group-hover:rotate-12 transition-transform relative z-10 border border-white/40">
+                   <Sparkles size={32} />
+                </div>
+                
+                {/* Intense Shimmer */}
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/25 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+                
+                {/* Glow Ambient */}
+                <div className="absolute -inset-10 bg-orange-500/30 blur-[60px] group-hover:bg-orange-500/40 transition-colors" />
+              </motion.button>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
