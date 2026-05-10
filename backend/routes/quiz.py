@@ -22,7 +22,7 @@ def get_quiz():
         return jsonify({'error': 'Session expired. Please re-upload your PDF to generate a quiz.'}), 404
 
     try:
-        full_text = "\n".join([p['text'] for p in doc['pages']])
+        full_text = doc.get('extracted_text', '')
         quiz = generate_quiz(full_text, num_questions)
         return jsonify({'quiz': quiz}), 200
     except Exception as e:

@@ -28,7 +28,7 @@ def get_toolkit():
         if not doc:
             return jsonify({'error': 'Document not found.'}), 404
             
-        full_text = "\n".join([p['text'] for p in doc.get('pages', [])])
+        full_text = doc.get('extracted_text', '')
     else:
         return jsonify({'error': 'Missing conversationId or pdfText.'}), 400
 

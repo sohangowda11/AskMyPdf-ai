@@ -17,7 +17,7 @@ def get_flashcards():
         return jsonify({"error": "Document not found"}), 404
         
     try:
-        flashcards = generate_flashcards(doc['content'])
+        flashcards = generate_flashcards(doc.get('extracted_text', ''))
         return jsonify({"flashcards": flashcards})
     except Exception as e:
         print(f"Flashcard generation failed: {e}")

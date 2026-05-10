@@ -29,8 +29,7 @@ def explain():
         logger.info(f"Extracting text from PDF: {doc['filepath']}")
         full_text = ""
         try:
-            pages_data = doc.get('pages', [])
-            full_text = "\n".join([p['text'] for p in pages_data])
+            full_text = doc.get('extracted_text', '')
             
             # Clean text: remove extra whitespace and newlines
             full_text = " ".join(full_text.split())

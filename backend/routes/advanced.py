@@ -25,7 +25,7 @@ def explain_simply_route():
 
     try:
         from services.ai_service import explain_simply
-        full_text = "\n".join([p['text'] for p in doc.get('pages', [])])
+        full_text = doc.get('extracted_text', '')
         
         result = explain_simply(full_text, user_question)
 
@@ -60,7 +60,7 @@ def run_tool():
         return jsonify({'error': 'Document not found in session.'}), 404
 
     try:
-        full_text = "\n".join([p['text'] for p in doc.get('pages', [])])
+        full_text = doc.get('extracted_text', '')
         if not full_text.strip():
             return jsonify({'error': 'No readable text.'}), 400
 

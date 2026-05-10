@@ -28,7 +28,7 @@ def get_summary():
         return jsonify({'error': 'Session expired or document not found. Please re-upload your PDF.'}), 404
 
     try:
-        full_text = "\n".join([p['text'] for p in doc.get('pages', [])])
+        full_text = doc.get('extracted_text', '')
         if not full_text.strip():
             return jsonify({'error': 'No readable text found in the document.'}), 400
             
