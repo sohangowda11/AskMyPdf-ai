@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from services.ai_service import summarize
-from store.memory_store import store
+from store import store
 
 import logging
 

@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from services.ai_service import generate_flashcards
-from store.memory_store import MemoryStore
+from store import store
 
 flashcards_bp = Blueprint('flashcards', __name__)
 
@@ -12,7 +12,7 @@ def get_flashcards():
     if not doc_id:
         return jsonify({"error": "Missing doc_id"}), 400
         
-    doc = MemoryStore.get_document(doc_id)
+    doc = store.get_document(doc_id)
     if not doc:
         return jsonify({"error": "Document not found"}), 404
         

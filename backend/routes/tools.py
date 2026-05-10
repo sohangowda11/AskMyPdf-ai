@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from services.ai_service import rewrite_text, explain_document
-from store.memory_store import store
+from store import store
 import logging
 
 tools_bp = Blueprint('tools', __name__)

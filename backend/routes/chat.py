@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from services.ai_service import ask_question
-from store.memory_store import store
+from store import store
 
 chat_bp = Blueprint('chat', __name__)
 

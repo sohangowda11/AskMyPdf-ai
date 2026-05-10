@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from services.ai_service import generate_quiz
-from store.memory_store import store
+from store import store
 
 quiz_bp = Blueprint('quiz', __name__)
 

@@ -2,7 +2,7 @@ import os
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 from services.pdf_service import extract_text, chunk_text, get_page_count
-from store.memory_store import store
+from store import store
 from config import Config
 
 import logging

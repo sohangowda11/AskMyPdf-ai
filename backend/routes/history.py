@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from store.memory_store import store
+from store import store
 
 history_bp = Blueprint('history', __name__)
 

@@ -1,4 +1,4 @@
-from store.memory_store import store
+from store import store
 from services.ai_service import find_relevant_chunks
 
 class MultiPDFSessionManager:

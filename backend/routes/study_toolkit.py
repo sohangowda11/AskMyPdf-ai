@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from services.ai_service import generate_study_toolkit
-from store.memory_store import store
+from store import store
 import logging
 
 study_toolkit_bp = Blueprint('study_toolkit', __name__)

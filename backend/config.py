@@ -10,6 +10,9 @@ class Config:
     GEMINI_API_KEY_PRIMARY = os.getenv('GEMINI_API_KEY_PRIMARY') or os.getenv('OPENAI_API_KEY')
     GEMINI_API_KEY_SECONDARY = os.getenv('GEMINI_API_KEY_SECONDARY')
     
+    SUPABASE_URL = os.getenv('SUPABASE_URL')
+    SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+    
     # Use absolute path for uploads to avoid CWD issues
     UPLOAD_FOLDER = os.path.join(BASE_DIR, os.getenv('UPLOAD_FOLDER', 'uploads'))
     MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 16 * 1024 * 1024))
