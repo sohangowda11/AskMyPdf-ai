@@ -15,4 +15,8 @@ class Config:
     
     # Use absolute path for uploads to avoid CWD issues
     UPLOAD_FOLDER = os.path.join(BASE_DIR, os.getenv('UPLOAD_FOLDER', 'uploads'))
-    MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 16 * 1024 * 1024))
+    
+    try:
+        MAX_FILE_SIZE = int(os.getenv('MAX_FILE_SIZE', 16 * 1024 * 1024))
+    except (ValueError, TypeError):
+        MAX_FILE_SIZE = 16 * 1024 * 1024
