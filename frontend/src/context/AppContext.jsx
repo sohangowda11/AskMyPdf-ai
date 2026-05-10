@@ -214,11 +214,14 @@ export function AppProvider({ children }) {
       const welcomeMsg = {
         id: 'welcome-' + Date.now(),
         role: 'assistant',
-        content: `Hey! I am your AI document assistant. I've loaded ${file.name} (${data.page_count || 0} pages).`,
+        content: `✅ PDF Uploaded Successfully!\n\nI've loaded **${file.name}** (${data.page_count || 0} pages). How can I help you study this document?`,
         sources: [],
         timestamp: new Date().toISOString(),
       };
       dispatch({ type: 'ADD_MESSAGE', payload: welcomeMsg });
+
+      // Ensure Study Toolkit is CLOSED by default on fresh upload
+      dispatch({ type: 'SET_STUDY_TOOLKIT', payload: { isOpen: false, data: null } });
 
       showNotification('PDF Ready! Entering workspace...', 'success');
 

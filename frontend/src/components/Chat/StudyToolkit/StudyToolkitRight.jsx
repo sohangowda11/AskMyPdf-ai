@@ -333,7 +333,10 @@ function FlashcardItem({ card }) {
       >
         {/* Front */}
         <div className="absolute inset-0 backface-hidden bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/10 rounded-2xl p-5 flex flex-col justify-center [backface-visibility:hidden]">
-          <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-2 opacity-60">Question</p>
+          <div className="flex justify-between items-center mb-2">
+            <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest opacity-60">Question</p>
+            <p className="text-[8px] font-black text-orange-500/60 uppercase tracking-tighter animate-pulse">Click to see answer</p>
+          </div>
           <p className="text-[13px] text-slate-700 dark:text-slate-200 font-bold leading-snug">"{card.front}"</p>
         </div>
         {/* Back */}
