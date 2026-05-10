@@ -332,12 +332,12 @@ function FlashcardItem({ card }) {
         className="w-full h-full relative preserve-3d"
       >
         {/* Front */}
-        <div className="absolute inset-0 backface-hidden bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/10 rounded-2xl p-5 flex flex-col justify-center">
+        <div className="absolute inset-0 backface-hidden bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/10 rounded-2xl p-5 flex flex-col justify-center [backface-visibility:hidden]">
           <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-2 opacity-60">Question</p>
           <p className="text-[13px] text-slate-700 dark:text-slate-200 font-bold leading-snug">"{card.front}"</p>
         </div>
         {/* Back */}
-        <div className="absolute inset-0 backface-hidden bg-amber-500/20 dark:bg-amber-500/20 border border-amber-500/30 rounded-2xl p-5 flex flex-col justify-center [transform:rotateY(180deg)]">
+        <div className="absolute inset-0 backface-hidden bg-amber-500/20 dark:bg-amber-500/20 border border-amber-500/30 rounded-2xl p-5 flex flex-col justify-center [transform:rotateY(180deg)] [backface-visibility:hidden]">
           <p className="text-[9px] font-black text-amber-700 dark:text-amber-300 uppercase tracking-widest mb-2 opacity-60 text-center">Answer</p>
           <p className="text-[12px] text-slate-800 dark:text-white font-bold text-center leading-relaxed">{card.back}</p>
         </div>
