@@ -21,7 +21,9 @@ class SupabaseStore:
     def add_document(self, filename, filepath, pages, chunks):
         doc_id = str(uuid.uuid4())
         # Combine pages into full text for permanent storage
-        full_text = "\n".join([p['text'] for p in pages])
+        full_text = ""
+        if pages:
+            full_text = "\n".join([str(p.get('text', '')) for p in pages])
         
         data = {
             'id': doc_id,
