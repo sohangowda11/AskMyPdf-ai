@@ -44,8 +44,8 @@ def get_summary():
             suggestions = [s.strip().replace('[', '').replace(']', '') for s in raw_suggs.split("|") if s.strip()]
 
         if conv_id:
-            store.add_message(conv_id, 'user', '📝 Summarize this document')
-            store.add_message(conv_id, 'assistant', clean_summary)
+            store.update_document_summary(doc_id, clean_summary)
+            # Add message to history manually if needed, but the UI usually handles this via summary display
 
         return jsonify({
             'summary': clean_summary,

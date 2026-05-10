@@ -53,8 +53,7 @@ def chat():
     if not conv:
         return jsonify({'error': 'Conversation not found'}), 404
 
-    # Save user message
-    store.add_message(conv_id, 'user', message)
+    # History will be saved as a pair after AI response
 
     try:
         conversation_history = conv.get('messages', [])
@@ -100,11 +99,9 @@ def chat():
         # Merge extracted sources with context sources
         final_sources = extracted_sources if extracted_sources else sources
 
-        # Save AI response
-        ai_msg = store.add_message(conv_id, 'assistant', clean_answer, final_sources)
-        
-        # We need to add suggestions to the stored message if our store supports it
-        # Or just return them in the response
+        # Save Question & Answer Pair for Persistence
+        # We pick the first doc_id for history tracking in this simplified model
+        store.add_chat_message(doc_ids[0], message, clean_answer, final_sources)
         
         return jsonify({
             'answer': clean_answer,

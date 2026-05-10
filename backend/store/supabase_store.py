@@ -9,151 +9,109 @@ class SupabaseStore:
         self.key = Config.SUPABASE_SERVICE_ROLE_KEY
         if self.url and self.key:
             self.supabase: Client = create_client(self.url, self.key)
-            print("   [DB] Supabase Persistent Store Initialized.")
+            print("   [DB] Supabase PostgreSQL Store Initialized.")
         else:
             self.supabase = None
             print("   [DB] WARNING: Supabase credentials missing. Persistence disabled.")
 
     def save_data(self):
-        """Dummy method for compatibility with memory_store interface."""
+        """Dummy for compatibility."""
         pass
 
     def add_document(self, filename, filepath, pages, chunks):
         doc_id = str(uuid.uuid4())
+        # Combine pages into full text for permanent storage
+        full_text = "\n".join([p['text'] for p in pages])
+        
         data = {
             'id': doc_id,
             'filename': filename,
             'filepath': filepath,
-            'pages': pages,
-            'chunks': chunks,
-            'page_count': len(pages)
+            'extracted_text': full_text, # Your requested field
+            'page_count': len(pages),
+            # 'chunks' are stored in the JSONB field for AI retrieval
+            'chunks': chunks 
         }
         if self.supabase:
-            self.supabase.table('documents').insert(data).execute()
+            self.supabase.table('pdf_documents').insert(data).execute()
         return doc_id
 
     def get_document(self, doc_id):
         if not self.supabase: return None
-        res = self.supabase.table('documents').select('*').eq('id', doc_id).execute()
+        res = self.supabase.table('pdf_documents').select('*').eq('id', doc_id).execute()
         if res.data:
             doc = res.data[0]
-            # Match internal naming convention
+            # Convert back to app format (doc_id vs id)
             return {**doc, 'doc_id': doc['id']}
         return None
 
-    def create_conversation(self, doc_ids, title=None):
-        conv_id = str(uuid.uuid4())
-        if isinstance(doc_ids, str):
-            doc_ids = [doc_ids]
-            
-        if not title:
-            docs = [self.get_document(did) for did in doc_ids]
-            valid_docs = [d for d in docs if d]
-            if len(valid_docs) == 1:
-                title = f"Chat about {valid_docs[0]['filename']}"
-            else:
-                title = f"Multi-PDF Chat ({len(valid_docs)} documents)"
-
-        data = {
-            'id': conv_id,
-            'doc_ids': doc_ids,
-            'title': title or 'New Conversation',
-            'pinned': False
-        }
+    def update_document_summary(self, doc_id, summary):
         if self.supabase:
-            self.supabase.table('conversations').insert(data).execute()
-        return conv_id
+            self.supabase.table('pdf_documents').update({'summary': summary}).eq('id', doc_id).execute()
 
-    def add_message(self, conv_id, role, content, sources=None):
+    def add_chat_message(self, doc_id, question, answer, sources=None):
+        """Maps to your ChatHistory table requirements."""
         data = {
-            'conversation_id': conv_id,
-            'role': role,
-            'content': content,
+            'document_id': doc_id,
+            'question': question,
+            'answer': answer,
             'sources': sources or []
         }
         if self.supabase:
-            res = self.supabase.table('messages').insert(data).execute()
-            if res.data:
-                msg = res.data[0]
-                return {**msg, 'timestamp': msg['timestamp']}
+            res = self.supabase.table('chat_history').insert(data).execute()
+            return res.data[0] if res.data else None
         return None
 
-    def get_conversation(self, conv_id):
-        if not self.supabase: return None
-        # Get conversation
-        c_res = self.supabase.table('conversations').select('*').eq('id', conv_id).execute()
-        if not c_res.data: return None
-        conv = c_res.data[0]
+    def get_chat_history(self, doc_id):
+        if not self.supabase: return []
+        res = self.supabase.table('chat_history').select('*').eq('document_id', doc_id).order('timestamp').execute()
+        return res.data if res.data else []
+
+    # --- COMPATIBILITY SHIMS FOR EXISTING ROUTES ---
+    # The existing routes use 'conversation' terminology. 
+    # For now, we map 'conversation' to 'document_id' to keep everything working.
+    
+    def create_conversation(self, doc_id, title=None):
+        # In our persistent schema, the PDFDocument IS the root of the conversation
+        return doc_id 
+
+    def add_message(self, doc_id, role, content, sources=None):
+        # We handle this by updating the chat_history
+        # If user asks, we store it. If assistant answers, we pair them.
+        # This is a slightly different flow, so we'll adapt chat.py shortly.
+        pass
+
+    def get_conversation(self, doc_id):
+        doc = self.get_document(doc_id)
+        if not doc: return None
         
-        # Get messages
-        m_res = self.supabase.table('messages').select('*').eq('conversation_id', conv_id).order('timestamp').execute()
-        
-        doc_ids = conv.get('doc_ids', [])
-        docs = [self.get_document(did) for did in doc_ids]
-        filenames = [d['filename'] for d in docs if d]
-        
+        history = self.get_chat_history(doc_id)
+        # Transform history into message format for frontend
+        messages = []
+        for h in history:
+            messages.append({'role': 'user', 'content': h['question'], 'timestamp': h['timestamp']})
+            messages.append({'role': 'assistant', 'content': h['answer'], 'sources': h['sources'], 'timestamp': h['timestamp']})
+            
         return {
-            'conversation_id': conv['id'],
-            'doc_ids': doc_ids,
-            'filenames': filenames,
-            'title': conv['title'],
-            'pinned': conv['pinned'],
-            'messages': m_res.data,
-            'created_at': conv['created_at']
+            'conversation_id': doc_id,
+            'doc_id': doc_id,
+            'title': doc['filename'],
+            'messages': messages,
+            'summary': doc.get('summary'),
+            'created_at': doc['created_at']
         }
 
     def get_all_conversations(self):
         if not self.supabase: return []
-        # Get conversations with message counts (simplified)
-        res = self.supabase.table('conversations').select('*, messages(count)').execute()
+        res = self.supabase.table('pdf_documents').select('id, filename, created_at').order('created_at', desc=True).execute()
         
         formatted = []
-        for conv in res.data:
-            doc_ids = conv.get('doc_ids', [])
-            # For simplicity in list view, we don't fetch all filenames here 
-            # unless needed by frontend immediately. 
-            # But the frontend expects 'filenames' list.
-            # We can optimize this later with a join or separate fetch.
+        for doc in res.data:
             formatted.append({
-                'conversation_id': conv['id'],
-                'doc_ids': doc_ids,
-                'filenames': [], # Placeholder or fetch if critical
-                'title': conv['title'],
-                'pinned': conv['pinned'],
-                'message_count': conv.get('messages', [{}])[0].get('count', 0),
-                'created_at': conv['created_at']
+                'conversation_id': doc['id'],
+                'doc_ids': [doc['id']],
+                'filenames': [doc['filename']],
+                'title': doc['filename'],
+                'created_at': doc['created_at']
             })
-        
-        return sorted(formatted, key=lambda x: (x['pinned'], x['created_at']), reverse=True)
-
-    def delete_conversation(self, conv_id):
-        if self.supabase:
-            self.supabase.table('conversations').delete().eq('id', conv_id).execute()
-            return True
-        return False
-
-    def update_conversation_title(self, conv_id, title):
-        if self.supabase:
-            self.supabase.table('conversations').update({'title': title}).eq('id', conv_id).execute()
-            return True
-        return False
-
-    def toggle_pin(self, conv_id):
-        if not self.supabase: return None
-        conv = self.get_conversation(conv_id)
-        if conv:
-            new_val = not conv['pinned']
-            self.supabase.table('conversations').update({'pinned': new_val}).eq('id', conv_id).execute()
-            return new_val
-        return None
-
-    def clear_all(self):
-        if self.supabase:
-            # Dangerous! Only if really needed.
-            self.supabase.table('messages').delete().neq('role', 'system').execute()
-            self.supabase.table('conversations').delete().neq('title', '').execute()
-            self.supabase.table('documents').delete().neq('filename', '').execute()
-            return True
-        return False
-
-# Singleton instance setup handled in __init__.py or app.py
+        return formatted
