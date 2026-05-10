@@ -505,7 +505,7 @@ export function AppProvider({ children }) {
       if (data.study_toolkit) {
         dispatch({ 
           type: 'SET_STUDY_TOOLKIT', 
-          payload: { data: data.study_toolkit, isLoading: false, isOpen: true } 
+          payload: { data: data.study_toolkit, isLoading: false, isOpen: false } 
         });
       } else {
         dispatch({ 
