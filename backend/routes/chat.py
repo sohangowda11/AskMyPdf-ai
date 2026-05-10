@@ -101,14 +101,14 @@ def chat():
 
         # Save Question & Answer Pair for Persistence
         # We pick the first doc_id for history tracking in this simplified model
-        store.add_chat_message(doc_ids[0], message, clean_answer, final_sources)
+        saved_msg = store.add_chat_message(doc_ids[0], message, clean_answer, final_sources)
         
         return jsonify({
             'answer': clean_answer,
             'sources': final_sources,
             'suggestions': suggestions,
-            'message_id': ai_msg['id'],
-            'timestamp': ai_msg['timestamp']
+            'message_id': saved_msg.get('id') if saved_msg else None,
+            'timestamp': saved_msg.get('timestamp') if saved_msg else None
         }), 200
     except Exception as e:
         return jsonify({'error': f'AI processing failed: {str(e)}'}), 500
