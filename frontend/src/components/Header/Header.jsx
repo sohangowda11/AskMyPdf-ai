@@ -23,8 +23,25 @@ export default function Header() {
          </h2>
       </div>
 
-      {/* Center: Spacer */}
-      <div className="flex-[2]" />
+      {/* Center: Explore AI Button (XL & Visible) */}
+      <div className="flex-[2] flex justify-center h-full items-center">
+        {state.activeConversation && (
+          <motion.button 
+            whileHover={{ scale: 1.05, y: -2 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => navigate(`/chat/${state.activeConversation.conversation_id}`)}
+            className="group flex items-center gap-6 px-10 py-4 bg-gradient-to-r from-orange-600 via-orange-500 to-amber-500 text-white rounded-[28px] transition-all duration-300 shadow-[0_15px_40px_rgba(249,115,22,0.4)] hover:shadow-[0_20px_50px_rgba(249,115,22,0.6)] border-2 border-white/20 hover:border-white/40 animate-shake-attention"
+          >
+            <div className="flex flex-col items-start text-left">
+              <span className="text-[10px] font-black uppercase tracking-[0.4em] text-white/80 mb-1 group-hover:translate-x-1 transition-transform">Explore More AI</span>
+              <span className="text-[16px] font-black uppercase tracking-widest text-white leading-none drop-shadow-sm">Full Workspace</span>
+            </div>
+            <div className="w-12 h-12 bg-black/20 backdrop-blur-md rounded-2xl flex items-center justify-center text-white border border-white/20 group-hover:rotate-12 transition-transform">
+              <Sparkles size={22} className="animate-pulse" />
+            </div>
+          </motion.button>
+        )}
+      </div>
 
       {/* Right: Actions */}
       <div className="flex-1 flex items-center justify-end gap-4">

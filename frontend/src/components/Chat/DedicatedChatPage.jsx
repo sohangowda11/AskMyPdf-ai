@@ -213,7 +213,7 @@ export default function DedicatedChatPage() {
         <div className="flex-1 flex flex-col relative overflow-hidden">
           <div className="flex-1 overflow-y-auto pt-10 pb-40 px-6 custom-scrollbar scroll-smooth">
             <div className="max-w-4xl mx-auto space-y-12">
-              {state.messages.length === 0 && (
+              {state.messages.length === 0 ? (
                 <div className="h-[60vh] flex flex-col items-center justify-center gap-12">
                   <div className="flex flex-col items-center text-center max-w-sm">
                     <div className="w-16 h-16 bg-orange-600 rounded-[28px] flex items-center justify-center text-white shadow-2xl shadow-orange-500/20 mb-8 animate-pulse">
@@ -227,11 +227,11 @@ export default function DedicatedChatPage() {
                     <SuggestionChips />
                   </div>
                 </div>
+              ) : (
+                state.messages.map((msg, i) => (
+                  <ChatMessage key={msg.id || i} message={msg} />
+                ))
               )}
-
-              {state.messages.map((msg, i) => (
-                <ChatMessage key={msg.id || i} message={msg} />
-              ))}
 
               <AnimatePresence>
                 {state.isSending && (
@@ -300,8 +300,6 @@ export default function DedicatedChatPage() {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
-
       </div>
     </div>
   );
