@@ -220,7 +220,23 @@ export default function DedicatedChatPage() {
                       <Sparkles size={32} />
                     </div>
                     <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-3 tracking-tight">AI Study Workspace</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 font-bold leading-relaxed uppercase tracking-widest">Select a prompt to start analyzing</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 font-bold leading-relaxed uppercase tracking-widest mb-10">Select a prompt to start analyzing</p>
+                    
+                    <motion.button
+                      onClick={() => generateStudyToolkit()}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="group relative px-8 py-5 bg-gradient-to-r from-orange-600 to-orange-500 rounded-[32px] flex items-center gap-6 shadow-2xl shadow-orange-600/30 overflow-hidden"
+                    >
+                      <div className="flex flex-col items-start text-left relative z-10">
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-200 mb-1">Click here to explore more AI</span>
+                        <span className="text-xl font-black uppercase tracking-tight text-white">Full Workspace</span>
+                      </div>
+                      <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-white backdrop-blur-md group-hover:rotate-12 transition-transform relative z-10">
+                         <Sparkles size={24} />
+                      </div>
+                      <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                    </motion.button>
                   </div>
                   
                   <div className="w-full max-w-2xl px-4">
