@@ -16,11 +16,17 @@ export const getPDFUrl = (filename) => {
   return `${base}/uploads/${filename}`;
 };
 
-export async function uploadPDF(file) {
+export async function uploadPDF(file, onUploadProgress) {
   const formData = new FormData();
   formData.append('file', file);
   const response = await api.post('/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (progressEvent) => {
+      if (onUploadProgress && progressEvent.total) {
+        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        onUploadProgress(percentCompleted);
+      }
+    }
   });
   return response.data;
 }

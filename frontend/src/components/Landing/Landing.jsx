@@ -155,10 +155,28 @@ export default function Landing() {
             </p>
 
             {isUploading && (
-              <div className={`absolute inset-0 backdrop-blur-2xl rounded-[40px] flex flex-col items-center justify-center z-50 px-8 text-center transition-colors duration-700 ${isDark ? 'bg-[#050505]/98' : 'bg-white/98'}`}>
-                 <div className={`w-12 h-12 border-2 rounded-full animate-spin mb-6 ${isDark ? 'border-white/5 border-t-orange-600' : 'border-slate-100 border-t-slate-900'}`} />
-                 <h4 className={`text-lg font-black tracking-tighter transition-colors duration-700 ${isDark ? 'text-white' : 'text-slate-900'}`}>Processing Knowledge...</h4>
-                 <div className="flex gap-2 mt-4">
+              <div className={`absolute inset-0 backdrop-blur-2xl rounded-[40px] flex flex-col items-center justify-center z-50 px-10 text-center transition-colors duration-700 ${isDark ? 'bg-[#050505]/98' : 'bg-white/98'}`}>
+                 <div className="relative mb-6">
+                    <div className={`w-16 h-16 border-2 rounded-full animate-spin ${isDark ? 'border-white/5 border-t-orange-600' : 'border-slate-100 border-t-slate-900'}`} />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                       <span className="text-[10px] font-black">{state.uploadProgress}%</span>
+                    </div>
+                 </div>
+                 
+                 <h4 className={`text-lg font-black tracking-tighter mb-4 transition-colors duration-700 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                   {state.uploadProgress < 100 ? 'Uploading Research Data...' : 'Synchronizing Knowledge...'}
+                 </h4>
+
+                 {/* Progress Bar */}
+                 <div className={`w-full h-1.5 rounded-full overflow-hidden mb-6 ${isDark ? 'bg-white/5' : 'bg-slate-100'}`}>
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${state.uploadProgress}%` }}
+                      className="h-full bg-gradient-to-r from-orange-600 to-amber-500 shadow-[0_0_10px_rgba(234,88,12,0.5)]"
+                    />
+                 </div>
+
+                 <div className="flex gap-2">
                     <div className={`w-1 h-1 rounded-full animate-bounce ${isDark ? 'bg-orange-600' : 'bg-slate-900'}`} style={{ animationDelay: '0ms' }} />
                     <div className={`w-1 h-1 rounded-full animate-bounce ${isDark ? 'bg-orange-600' : 'bg-slate-900'}`} style={{ animationDelay: '200ms' }} />
                     <div className={`w-1 h-1 rounded-full animate-bounce ${isDark ? 'bg-orange-600' : 'bg-slate-900'}`} style={{ animationDelay: '400ms' }} />
