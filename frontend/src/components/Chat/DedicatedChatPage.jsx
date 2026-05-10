@@ -224,8 +224,8 @@ export default function DedicatedChatPage() {
                       className="pointer-events-auto group relative px-10 py-6 bg-gradient-to-r from-orange-600 to-orange-500 rounded-[40px] flex items-center gap-8 shadow-[0_20px_50px_rgba(234,88,12,0.4)] overflow-hidden border border-white/20 backdrop-blur-xl"
                     >
                       <div className="flex flex-col items-start text-left relative z-10">
-                        <span className="text-[11px] font-black uppercase tracking-[0.3em] text-orange-100 mb-1.5 opacity-80">Click here to explore more AI</span>
-                        <span className="text-2xl font-black uppercase tracking-tight text-white">Full Workspace</span>
+                        <span className="text-[11px] font-black uppercase tracking-[0.3em] text-orange-100 mb-1.5 opacity-80">Click here to</span>
+                        <span className="text-2xl font-black uppercase tracking-tight text-white">Explore More AI Full Workspace</span>
                       </div>
                       <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center text-white backdrop-blur-md group-hover:rotate-12 transition-transform relative z-10 border border-white/30">
                          <Sparkles size={28} />
