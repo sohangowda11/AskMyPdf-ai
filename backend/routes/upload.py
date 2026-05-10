@@ -50,15 +50,17 @@ def upload_file():
     file.save(filepath)
 
     try:
-        logger.info("Extracting text from PDF...")
+        logger.info(f"Extracting text from: {filepath}")
         pages = extract_text(filepath)
+        logger.info(f"Pages extracted: {len(pages)}")
         
         logger.info("Chunking text...")
         chunks = chunk_text(pages)
+        logger.info(f"Chunks generated: {len(chunks)}")
         
         page_count = get_page_count(filepath)
         
-        logger.info("Updating memory store...")
+        logger.info("Storing document metadata...")
         doc_id = store.add_document(filename, filepath, pages, chunks)
         
         # Clean title: use filename without extension
