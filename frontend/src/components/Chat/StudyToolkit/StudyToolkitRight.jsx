@@ -332,12 +332,15 @@ function FlashcardItem({ card }) {
         className="w-full h-full relative preserve-3d"
       >
         {/* Front */}
-        <div className="absolute inset-0 backface-hidden bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/10 rounded-2xl p-5 flex flex-col justify-center [backface-visibility:hidden]">
-          <div className="flex justify-between items-center mb-2">
-            <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest opacity-60">Question</p>
-            <p className="text-[8px] font-black text-orange-500/60 uppercase tracking-tighter animate-pulse">Click to see answer</p>
+        <div className="absolute inset-0 backface-hidden bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/10 rounded-2xl p-5 flex flex-col justify-between [backface-visibility:hidden]">
+          <div>
+            <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-2 opacity-60">Question</p>
+            <p className="text-[13px] text-slate-700 dark:text-slate-200 font-bold leading-snug">"{card.front}"</p>
           </div>
-          <p className="text-[13px] text-slate-700 dark:text-slate-200 font-bold leading-snug">"{card.front}"</p>
+          <div className="flex items-center gap-1.5 pt-2 border-t border-amber-500/10 mt-2">
+             <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-pulse" />
+             <p className="text-[9px] font-black text-orange-600 uppercase tracking-widest">Click to reveal answer</p>
+          </div>
         </div>
         {/* Back */}
         <div className="absolute inset-0 backface-hidden bg-amber-500/20 dark:bg-amber-500/20 border border-amber-500/30 rounded-2xl p-5 flex flex-col justify-center [transform:rotateY(180deg)] [backface-visibility:hidden]">
