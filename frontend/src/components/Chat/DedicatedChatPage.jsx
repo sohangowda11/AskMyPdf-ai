@@ -315,8 +315,8 @@ export default function DedicatedChatPage() {
 
       {/* GLOBAL CENTER BUTTON - MOVED TO ROOT FOR GUARANTEED CENTERING */}
       <AnimatePresence>
-        {(state.messages.length <= 1 && !state.studyToolkit.isOpen) && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none">
+        {(!isRightPanelOpen && state.messages.length <= 1) && (
+          <div key="central-explore-btn" className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none">
              <motion.button
                 onClick={() => generateStudyToolkit()}
                 initial={{ scale: 0.8, opacity: 0, y: 30 }}
