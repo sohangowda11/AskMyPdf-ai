@@ -214,23 +214,28 @@ export default function DedicatedChatPage() {
           <div className="flex-1 overflow-y-auto pt-10 pb-40 px-6 custom-scrollbar scroll-smooth">
             <div className="max-w-4xl mx-auto space-y-12">
               {state.messages.length <= 1 && (
-                <div className="flex flex-col items-center justify-center py-12">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none">
                    <motion.button
                       onClick={() => generateStudyToolkit()}
-                      initial={{ scale: 0.9, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
+                      initial={{ scale: 0.8, opacity: 0, y: 20 }}
+                      animate={{ scale: 1, opacity: 1, y: 0 }}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      className="group relative px-8 py-5 bg-gradient-to-r from-orange-600 to-orange-500 rounded-[32px] flex items-center gap-6 shadow-2xl shadow-orange-600/30 overflow-hidden"
+                      className="pointer-events-auto group relative px-10 py-6 bg-gradient-to-r from-orange-600 to-orange-500 rounded-[40px] flex items-center gap-8 shadow-[0_20px_50px_rgba(234,88,12,0.4)] overflow-hidden border border-white/20 backdrop-blur-xl"
                     >
                       <div className="flex flex-col items-start text-left relative z-10">
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-200 mb-1">Click here to explore more AI</span>
-                        <span className="text-xl font-black uppercase tracking-tight text-white">Full Workspace</span>
+                        <span className="text-[11px] font-black uppercase tracking-[0.3em] text-orange-100 mb-1.5 opacity-80">Click here to explore more AI</span>
+                        <span className="text-2xl font-black uppercase tracking-tight text-white">Full Workspace</span>
                       </div>
-                      <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-white backdrop-blur-md group-hover:rotate-12 transition-transform relative z-10">
-                         <Sparkles size={24} />
+                      <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center text-white backdrop-blur-md group-hover:rotate-12 transition-transform relative z-10 border border-white/30">
+                         <Sparkles size={28} />
                       </div>
-                      <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                      
+                      {/* Shimmer Effect */}
+                      <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                      
+                      {/* Glow Ambient */}
+                      <div className="absolute -inset-4 bg-orange-500/20 blur-3xl group-hover:bg-orange-500/30 transition-colors" />
                     </motion.button>
                 </div>
               )}
