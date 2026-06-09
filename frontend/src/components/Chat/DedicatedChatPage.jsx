@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Sparkles, Moon, Sun, Lightbulb, Mic } from 'lucide-react';
@@ -14,28 +14,70 @@ export default function DedicatedChatPage() {
   const navigate = useNavigate();
   const { state, loadConversation, sendChatMessage, generateStudyToolkit, requestExplainSimply, setVoiceModeOpen, setStudyToolkitOpen, dispatch } = useApp();
   const messagesEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
 
+  const [isAutoScrolling, setIsAutoScrolling] = useState(true);
   const isDark = state.theme === 'dark';
 
   const toggleTheme = () => {
     dispatch({ type: 'TOGGLE_THEME' });
   };
 
+  const lastLoadedConvId = useRef(null);
+
   // Initial load if arriving directly
   useEffect(() => {
-    if (conversationId && (!state.activeConversation || state.activeConversation.conversation_id !== conversationId)) {
-      // Find the conversation from history and load it
-      const conv = state.conversations.find(c => c.conversation_id === conversationId);
-      if (conv) {
-        loadConversation(conv);
+    if (conversationId && conversationId !== lastLoadedConvId.current) {
+      if (state.activeConversation?.conversation_id !== conversationId) {
+        // Find the conversation from history and load it
+        const conv = state.conversations.find(c => c.conversation_id === conversationId);
+        if (conv) {
+          loadConversation(conv);
+          lastLoadedConvId.current = conversationId;
+        }
+      } else {
+        lastLoadedConvId.current = conversationId;
       }
     }
-  }, [conversationId, state.conversations, state.activeConversation, loadConversation]);
+  }, [conversationId, state.conversations, loadConversation, state.activeConversation]);
 
-  // Scroll to bottom
+  // Initial scroll and new message scroll
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isAutoScrolling) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [state.messages, state.isSending]);
+
+  // MutationObserver for continuous smooth streaming scroll
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleUserScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
+      setIsAutoScrolling(isAtBottom);
+    };
+
+    container.addEventListener('scroll', handleUserScroll, { passive: true });
+
+    const observer = new MutationObserver(() => {
+      if (isAutoScrolling) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      }
+    });
+
+    observer.observe(container, { 
+      childList: true, 
+      subtree: true, 
+      characterData: true 
+    });
+
+    return () => {
+      observer.disconnect();
+      container.removeEventListener('scroll', handleUserScroll);
+    };
+  }, [isAutoScrolling]);
 
   // Handle smart suggestions
   useEffect(() => {
@@ -79,8 +121,15 @@ export default function DedicatedChatPage() {
                       <div key={doc.doc_id} className="relative group/chip">
                         <button
                           onClick={() => {
-                              dispatch({ type: 'SET_ACTIVE_DOCUMENT', payload: doc });
-                              dispatch({ type: 'SET_PDF_URL', payload: `/uploads/${doc.filename}` });
+                              // Find the specific single-pdf conversation for this doc
+                              const singleConv = state.conversations.find(c => c.doc_id === doc.doc_id && (!c.doc_ids || c.doc_ids.length === 1));
+                              if (singleConv) {
+                                loadConversation(singleConv);
+                              } else {
+                                // Fallback if no specific conversation found
+                                dispatch({ type: 'SET_ACTIVE_DOCUMENT', payload: doc });
+                                dispatch({ type: 'SET_PDF_URL', payload: api.getPDFUrlById(doc.doc_id) });
+                              }
                           }}
                           className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border flex items-center gap-2 ${
                             state.activeDocument?.doc_id === doc.doc_id
@@ -98,7 +147,7 @@ export default function DedicatedChatPage() {
                               dispatch({ type: 'SET_ACTIVE_DOCUMENTS', payload: newDocs });
                               if (state.activeDocument?.doc_id === doc.doc_id) {
                                 dispatch({ type: 'SET_ACTIVE_DOCUMENT', payload: newDocs[0] });
-                                dispatch({ type: 'SET_PDF_URL', payload: `/uploads/${newDocs[0].filename}` });
+                                dispatch({ type: 'SET_PDF_URL', payload: api.getPDFUrlById(newDocs[0].doc_id) });
                               }
                             }
                           }}
@@ -210,68 +259,70 @@ export default function DedicatedChatPage() {
         </div>
 
         {/* Chat Section */}
-        <div className="flex-1 flex flex-col relative overflow-hidden">
-          <div className="flex-1 overflow-y-auto pt-10 pb-40 px-6 custom-scrollbar scroll-smooth">
-            <div className="max-w-4xl mx-auto space-y-12">
-              {state.messages.length === 0 ? (
-                <div className="h-[60vh] flex flex-col items-center justify-center gap-12">
+        <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
+          <div 
+            ref={scrollContainerRef}
+            className="flex-1 overflow-y-auto px-6 custom-scrollbar scroll-smooth"
+          >
+            <div className="max-w-4xl mx-auto w-full pt-10 pb-10">
+              {state.messages.length === 0 && (
+                <div className="h-[40vh] flex flex-col items-center justify-center gap-12 py-20">
                   <div className="flex flex-col items-center text-center max-w-sm">
                     <div className="w-16 h-16 bg-orange-600 rounded-[28px] flex items-center justify-center text-white shadow-2xl shadow-orange-500/20 mb-8 animate-pulse">
                       <Sparkles size={32} />
                     </div>
                     <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-3 tracking-tight">AI Study Workspace</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 font-bold leading-relaxed uppercase tracking-widest">Select a prompt to start analyzing</p>
-                  </div>
-                  
-                  <div className="w-full max-w-2xl px-4">
-                    <SuggestionChips />
+                    <p className="text-sm text-slate-500 dark:text-slate-400 font-bold leading-relaxed uppercase tracking-widest">Your document is ready for analysis</p>
                   </div>
                 </div>
-              ) : (
-                state.messages.map((msg, i) => (
-                  <ChatMessage key={msg.id || i} message={msg} />
-                ))
               )}
 
-              <AnimatePresence>
-                {state.isSending && (
+              <div className="space-y-10">
+                {state.messages.map((msg, i) => (
+                  <ChatMessage key={msg.id || i} message={msg} />
+                ))}
+
+                <AnimatePresence>
+                  {state.isSending && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="flex items-start gap-4"
+                    >
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 border shadow-sm bg-orange-600 border-orange-500 text-white">
+                        <Sparkles size={16} />
+                      </div>
+                      <div className="px-5 py-4 bg-slate-50/50 dark:bg-[#1b1f2a] border border-slate-100 dark:border-slate-800/60 rounded-[24px] rounded-tl-none">
+                        <span className="flex gap-1.5">
+                          <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </span>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              <div ref={messagesEndRef} className="h-4" />
+            </div>
+          </div>
+
+          {/* Sticky Composer Area */}
+          <div className="flex-shrink-0 px-6 py-8 bg-white dark:bg-[#0a0a0f] border-t border-slate-50 dark:border-slate-800/40">
+            <div className="max-w-4xl mx-auto flex flex-col gap-6">
+               <AnimatePresence>
+                {!state.isSending && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className="flex items-start gap-4"
                   >
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 border shadow-sm bg-orange-600 border-orange-500 text-white">
-                      <Sparkles size={16} />
-                    </div>
-                    <div className="px-5 py-4 bg-slate-50/50 dark:bg-[#1b1f2a] border border-slate-100 dark:border-slate-800/60 rounded-[24px] rounded-tl-none">
-                      <span className="flex gap-1.5">
-                        <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                        <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                        <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                      </span>
-                    </div>
+                    <SuggestionChips />
                   </motion.div>
                 )}
               </AnimatePresence>
-
-              {!state.isSending && state.messages.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  style={{ paddingLeft: '52px' }}
-                >
-                  <SuggestionChips />
-                </motion.div>
-              )}
-
-              <div ref={messagesEndRef} className="h-10" />
-            </div>
-          </div>
-
-          {/* Floating Input Box */}
-          <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-white via-white dark:from-[#0a0a0f] dark:via-[#0a0a0f] to-transparent pt-10 pb-8 px-6 z-20 pointer-events-none">
-            <div className="max-w-4xl mx-auto pointer-events-auto">
               <ChatInput />
             </div>
           </div>

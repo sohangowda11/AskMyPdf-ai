@@ -30,7 +30,7 @@
 }
 
 body {
-  @apply bg-[#fdfcfb] text-slate-900 font-sans antialiased overflow-hidden selection:bg-orange-500/20 selection:text-orange-900;
+  @apply bg-[#fdfcfb] text-slate-900 font-sans antialiased overflow-x-hidden selection:bg-orange-500/20 selection:text-orange-900;
   font-family: 'Inter', sans-serif;
   text-rendering: optimizeLegibility;
   line-height: 1.6;

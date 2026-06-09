@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ZoomIn, ZoomOut, Maximize2, Download, Search } from 'lucide-react';
+import { ZoomIn, ZoomOut, Download, Search, AlertCircle } from 'lucide-react';
 import { useApp } from '../../hooks/useApp';
 import * as api from '../../api/api';
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -26,27 +26,30 @@ export default function PDFViewer() {
   const markInstances = useRef({});
   const lastFailedText = useRef('');
 
+  // Use the direct URL from global state for stable streaming
+  const pdfFile = state.pdfUrl;
+  const isLoading = false; // react-pdf handles loading UI internally or via custom overlay
+  const isError = false;   // react-pdf handles error UI via noData/error props if needed
+
   useEffect(() => {
     const handleHighlight = (e) => {
       const { page, text, doc_id, filename, shouldScroll } = e.detail;
-      
-      // If the source is from a different document, switch to it first
       if (doc_id && state.activeDocument?.doc_id !== doc_id) {
+          console.log("!!! [VIEWER] Switching document for highlight:", filename);
           dispatch({ 
             type: 'SET_ACTIVE_DOCUMENT', 
             payload: { doc_id, filename, page_count: 0 } 
           });
+          // Prefer direct filename URL for stability if available
+          const targetUrl = filename ? api.getPDFUrl(filename) : api.getPDFUrlById(doc_id);
           dispatch({ 
             type: 'SET_PDF_URL', 
-            payload: api.getPDFUrl(filename) 
+            payload: targetUrl 
           });
       }
-
       if (page && text) {
         setHighlightPage(page);
         setHighlightText(text);
-        
-        // Scroll logic: ONLY if explicitly requested (e.g. clicking a source pill)
         if (shouldScroll) {
           setTimeout(() => {
             const pageEl = document.querySelector(`[data-page-number="${page}"]`);
@@ -62,7 +65,7 @@ export default function PDFViewer() {
     };
     window.addEventListener('highlight-pdf', handleHighlight);
     return () => window.removeEventListener('highlight-pdf', handleHighlight);
-  }, []);
+  }, [state.activeDocument, dispatch]);
 
   // Responsive width scaling
   useEffect(() => {
@@ -75,48 +78,32 @@ export default function PDFViewer() {
     return () => observer.disconnect();
   }, []);
 
-  const onDocumentLoadSuccess = ({ numPages }) => {
-    setNumPages(numPages);
-  };
+  const onDocumentLoadSuccess = ({ numPages }) => setNumPages(numPages);
 
   const applyHighlight = (pageIndex) => {
       if (highlightText && highlightPage === pageIndex) {
-          console.log(">>> ATTEMPTING HIGHLIGHT ON PAGE", pageIndex, "TEXT:", highlightText);
           const pageEl = document.querySelector(`[data-page-number="${highlightPage}"] .react-pdf__Page__textContent`);
-          
           if (pageEl) {
               if (!markInstances.current[highlightPage]) {
                   markInstances.current[highlightPage] = new Mark(pageEl);
               }
               const marker = markInstances.current[highlightPage];
-              
-              // Clear previous marks
               Object.values(markInstances.current).forEach(m => m.unmark());
-              
-              // Robust normalization
-              const normalize = (t) => t
-                  .replace(/[\u2018\u2019]/g, "'")
-                  .replace(/[\u201C\u201D]/g, '"')
-                  .replace(/[\u00AD\u200B\u200C\u200D\FEFF]/g, '') // Remove soft hyphens and hidden chars
-                  .replace(/\s+/g, ' ')
-                  .trim();
-
+              const normalize = (t) => t.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u00AD\u200B\u200C\u200D\FEFF]/g, '').replace(/\s+/g, ' ').trim();
               const normalizedText = normalize(highlightText);
-
               marker.mark(normalizedText, {
                   accuracy: "partially",
                   separateWordSearch: false,
                   acrossElements: true,
                   ignoreJoiners: true,
                   ignorePunctuation: [":", ";", ",", ".", "-", "(", ")", "[", "]", "{", "}", "?", "!", "'", '"', "—", "–"],
-                  wildcards: "enabled", // Allow matching across line breaks better
+                  wildcards: "enabled",
                   className: "pdf-highlight-glow",
                   done: (count) => {
                       if (count > 0) {
                           setHighlightError(false);
                           scrollToHighlight(pageEl);
                       } else {
-                          // Fallback 1: Try without punctuation at all
                           const noPunctText = normalizedText.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
                           if (noPunctText.length > 10) {
                               marker.mark(noPunctText, {
@@ -154,10 +141,8 @@ export default function PDFViewer() {
   };
 
   const attemptShortFallback = (marker, fullText, pageEl) => {
-      // Try highlighting the first 40 chars
       const shortText = fullText.substring(0, 40).trim();
       if (shortText.length > 8) {
-          console.log(">>> FALLBACK HIGHLIGHTING:", shortText);
           marker.mark(shortText, {
               accuracy: "partially",
               className: "pdf-highlight-glow",
@@ -184,55 +169,56 @@ export default function PDFViewer() {
   };
 
   useEffect(() => {
-      if (highlightPage) {
-          applyHighlight(highlightPage);
-      }
+      if (highlightPage) applyHighlight(highlightPage);
   }, [highlightText, highlightPage, zoom]);
 
-  // Debounced Zoom for smooth performance
   const [displayZoom, setDisplayZoom] = useState(1);
   useEffect(() => {
     const timer = setTimeout(() => setDisplayZoom(zoom), 150);
     return () => clearTimeout(timer);
   }, [zoom]);
 
-  // Zoom logic based on container width
   const baseWidth = (containerWidth - 80);
   const pdfWidth = baseWidth > 0 ? baseWidth * displayZoom : 800 * displayZoom;
 
-  const handleDownload = () => {
-    if (state.pdfUrl) {
-      const link = document.createElement('a');
-      link.href = state.pdfUrl;
-      link.download = state.activeDocument?.title || 'document.pdf';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+  const handleDownload = async () => {
+    if (state.activeDocument?.doc_id) {
+      try {
+        const blobUrl = await api.fetchPDFBlobById(state.activeDocument.doc_id);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = state.activeDocument?.filename || 'document.pdf';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
+      } catch (err) {
+        console.error("Download failed:", err);
+      }
     }
   };
 
   return (
     <div className="flex flex-col h-full bg-[#f8f9fa] dark:bg-[#0f1117] relative transition-colors duration-300 gpu-accelerated">
       {/* Floating Toolbar */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 p-2 bg-white/80 dark:bg-[#1b1f2a]/80 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/60 rounded-[20px] shadow-2xl transition-all hover:shadow-orange-500/10">
-        <button onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} className="p-2.5 hover:bg-slate-50 dark:hover:bg-[#232938] rounded-xl text-slate-500 dark:text-slate-400 transition-colors">
-          <ZoomOut size={18} />
-        </button>
-        <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 px-2 min-w-[50px] text-center uppercase tracking-widest">
-          {Math.round(zoom * 100)}%
-        </span>
-        <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} className="p-2.5 hover:bg-slate-50 dark:hover:bg-[#232938] rounded-xl text-slate-500 dark:text-slate-400 transition-colors">
-          <ZoomIn size={18} />
-        </button>
-        
-        <div className="w-px h-4 bg-slate-100 dark:bg-slate-800 mx-1" />
-        
-        <button onClick={handleDownload} className="p-2.5 hover:bg-slate-50 dark:hover:bg-[#232938] rounded-xl text-slate-500 dark:text-slate-400 transition-colors">
-          <Download size={18} />
-        </button>
-      </div>
+      {!isError && (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 p-2 bg-white/80 dark:bg-[#1b1f2a]/80 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/60 rounded-[20px] shadow-2xl transition-all hover:shadow-orange-500/10">
+            <button onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} className="p-2.5 hover:bg-slate-50 dark:hover:bg-[#232938] rounded-xl text-slate-500 dark:text-slate-400 transition-colors">
+            <ZoomOut size={18} />
+            </button>
+            <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 px-2 min-w-[50px] text-center uppercase tracking-widest">
+            {Math.round(zoom * 100)}%
+            </span>
+            <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} className="p-2.5 hover:bg-slate-50 dark:hover:bg-[#232938] rounded-xl text-slate-500 dark:text-slate-400 transition-colors">
+            <ZoomIn size={18} />
+            </button>
+            <div className="w-px h-4 bg-slate-100 dark:bg-slate-800 mx-1" />
+            <button onClick={handleDownload} className="p-2.5 hover:bg-slate-50 dark:hover:bg-[#232938] rounded-xl text-slate-500 dark:text-slate-400 transition-colors">
+            <Download size={18} />
+            </button>
+        </div>
+      )}
       
-      {/* Highlight Error Toast */}
       <AnimatePresence>
         {highlightError && (
           <motion.div
@@ -247,7 +233,6 @@ export default function PDFViewer() {
         )}
       </AnimatePresence>
 
-      {/* PDF Scroll Container */}
       <div ref={containerRef} className="flex-1 overflow-auto custom-scrollbar smooth-scroll p-10 pt-24 flex justify-center bg-slate-100/50 dark:bg-[#0a0a0f]">
         <div className="relative group w-full flex justify-center">
           <motion.div 
@@ -256,16 +241,11 @@ export default function PDFViewer() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
           >
-             {state.pdfUrl ? (
+             {pdfFile ? (
                <Document
-                 file={state.pdfUrl}
+                 file={pdfFile}
                  onLoadSuccess={onDocumentLoadSuccess}
                  className="flex flex-col items-center gap-8 pb-20"
-                 loading={
-                     <div className="w-[800px] h-[1000px] bg-white/5 dark:bg-white/5 animate-pulse rounded-2xl flex items-center justify-center text-slate-500 font-black tracking-widest uppercase text-[10px]">
-                         Synchronizing Knowledge...
-                     </div>
-                 }
                >
                  {Array.from(new Array(numPages), (el, index) => (
                    <div key={`page_${index + 1}`} className="rounded-2xl shadow-2xl shadow-slate-200 dark:shadow-black/60 overflow-hidden bg-white border border-slate-100 dark:border-slate-800 transition-transform duration-500 hover:scale-[1.005]">
@@ -277,18 +257,6 @@ export default function PDFViewer() {
                          onRenderTextLayerSuccess={() => {
                              setTimeout(() => applyHighlight(index + 1), 100);
                          }}
-                         loading={
-                           <div style={{ width: pdfWidth, height: pdfWidth * 1.41 }} className="bg-white dark:bg-[#151821] flex flex-col gap-4 p-10">
-                              <div className="h-8 bg-slate-50 dark:bg-slate-800/40 rounded-lg shimmer w-3/4" />
-                              <div className="h-4 bg-slate-50 dark:bg-slate-800/40 rounded-lg shimmer w-full" />
-                              <div className="h-4 bg-slate-50 dark:bg-slate-800/40 rounded-lg shimmer w-full" />
-                              <div className="h-4 bg-slate-50 dark:bg-slate-800/40 rounded-lg shimmer w-5/6" />
-                              <div className="mt-8 space-y-4">
-                                <div className="h-4 bg-slate-50 dark:bg-slate-800/40 rounded-lg shimmer w-full" />
-                                <div className="h-4 bg-slate-50 dark:bg-slate-800/40 rounded-lg shimmer w-full" />
-                              </div>
-                           </div>
-                         }
                        />
                    </div>
                  ))}

@@ -1,6 +1,9 @@
 import json
+import logging
 from openai import OpenAI
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 def get_client(key):
     if key and key.startswith("AIza"):
@@ -13,19 +16,87 @@ def get_primary_client():
 def get_secondary_client():
     return get_client(Config.GEMINI_API_KEY_SECONDARY)
 
+def _run_gemini_native(key, messages, temperature=0.3, max_tokens=1000):
+    """Direct REST call to Gemini v1beta for guaranteed reliability."""
+    import requests
+    
+    # Try multiple verified model names from the user's available list
+    models_to_try = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-lite-latest", "gemini-3.5-flash", "gemini-pro-latest"]
+    
+    last_error = None
+    for model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+        
+        # Convert OpenAI message format to Gemini format
+        contents = []
+        for m in messages:
+            role = "model" if m['role'] == "assistant" else "user"
+            contents.append({"role": role, "parts": [{"text": m['content']}]})
+            
+        payload = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens
+            }
+        }
+        
+        try:
+            logger.info(f"!!! [AI_SERVICE] Attempting NATIVE Gemini call with: {model}")
+            response = requests.post(url, json=payload, timeout=30)
+            res_data = response.json()
+            
+            if 'candidates' in res_data:
+                text = res_data['candidates'][0]['content']['parts'][0]['text']
+                # Mock an OpenAI response object
+                class MockResponse:
+                    class Choice:
+                        class Message:
+                            def __init__(self, content): self.content = content
+                        def __init__(self, content): self.message = self.Message(content)
+                    def __init__(self, content): self.choices = [self.Choice(content)]
+                
+                return MockResponse(text)
+            else:
+                logger.warning(f"!!! [AI_SERVICE] Native model {model} failed: {res_data}")
+                last_error = Exception(f"Gemini Native Error: {res_data}")
+                continue
+        except Exception as e:
+            logger.warning(f"!!! [AI_SERVICE] Native model {model} request failed: {str(e)}")
+            last_error = e
+            continue
+            
+    logger.error(f"!!! [AI_SERVICE] ALL Native Gemini models failed.")
+    raise last_error
+
 def _run_completion(c, messages, temperature=0.3, max_tokens=1000):
+    # Check if this is a Gemini client using our custom base_url
     is_gemini = hasattr(c, 'base_url') and "generativelanguage" in str(c.base_url)
-    model_name = "gemini-1.5-flash-latest" if is_gemini else "gpt-4o-mini"
-    try:
-        return c.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
-    except Exception as e:
-        print(f"API Error ({model_name}): {str(e)}")
-        raise e
+    
+    if is_gemini:
+        # BYPASS the broken OpenAI compatibility layer and use REST directly
+        return _run_gemini_native(c.api_key, messages, temperature, max_tokens)
+
+    # Standard OpenAI path
+    models_to_try = ["gpt-4o-mini", "gpt-3.5-turbo"]
+    
+    last_error = None
+    for model_name in models_to_try:
+        try:
+            logger.info(f"!!! [AI_SERVICE] Attempting OpenAI completion with model: {model_name}")
+            return c.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+        except Exception as e:
+            last_error = e
+            logger.warning(f"!!! [AI_SERVICE] OpenAI Model {model_name} failed: {str(e)}")
+            continue
+            
+    logger.error(f"!!! [AI_SERVICE] ALL models failed for client. Last error: {str(last_error)}")
+    raise last_error
 
 def get_embedding(text, client=None):
     """Generate embedding for a text chunk using Gemini."""
@@ -47,7 +118,7 @@ def get_embedding(text, client=None):
         print(f"Embedding error: {e}")
         return None
 
-def find_relevant_chunks(question, chunks, max_chunks=8):
+def find_relevant_chunks(question, chunks, max_chunks=12):
     """Find most relevant chunks using Semantic + Keyword Hybrid search."""
     import numpy as np
     
@@ -73,7 +144,6 @@ def find_relevant_chunks(question, chunks, max_chunks=8):
                 pass
         
         # Hybrid Rank: 30% Keyword, 70% Semantic
-        # Normalizing keyword score roughly (assuming max overlap of 10)
         norm_keyword = min(keyword_score / 10.0, 1.0)
         total_score = (norm_keyword * 0.3) + (semantic_score * 0.7)
         
@@ -84,38 +154,35 @@ def find_relevant_chunks(question, chunks, max_chunks=8):
 
 
 def ask_question(question, relevant, conversation_history=None):
-    """Ask a question about documents with provided context chunks."""
-    # Build context with clear document attribution
+    """Ask a high-fidelity question about documents with rich context."""
+    # Build context with clear document attribution and page mapping
     context_parts = []
     for i, c in enumerate(relevant):
         doc_name = c.get('filename', 'Unknown Document')
-        context_parts.append(f"### [DOCUMENT {i+1}]: {doc_name} (Page {c['page']})\n{c['text']}")
+        context_parts.append(f"### [SOURCE {i+1}]: {doc_name} (Page {c['page']})\n{c['text']}")
     
     context = "\n\n---\n\n".join(context_parts)
 
+    system_prompt = (
+        "You are an Elite Document Intelligence System.\n\n"
+        "STRICT OPERATIONAL RULES:\n"
+        "1. PROVIDE DEPTH. Do not be shallow. Use the provided context to give detailed, professional, and accurate answers.\n"
+        "2. DOCUMENT ATTRIBUTION: Explicitly mention which source/PDF you are referencing. Use phrases like 'According to Source 1...' or 'The [filename] document states...'.\n"
+        "3. FORMATTING: Use clean Markdown (bullet points, bold text, numbered lists). Avoid unnecessary fluff.\n"
+        "4. TRUTH ONLY: If the answer is not in the context, state that clearly but offer to explain related concepts if possible.\n\n"
+        "FOLLOW-UP GENERATION:\n"
+        "At the very end, provide exactly 2-3 highly intelligent follow-up questions tailored to the user's specific query.\n"
+        "Format exactly like this (no other text after):\n\n"
+        "SOURCES: [{\"text\": \"Exact text fragment\", \"page\": 1, \"filename\": \"doc.pdf\"}]\n"
+        "SUGGESTIONS: [Question 1] | [Question 2] | [Question 3]"
+    )
+
     messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an Elite Multi-PDF Document Intelligence System.\n\n"
-                "STRICT BREVITY RULES:\n"
-                "1. BE EXTREMELY CONCISE. Never output more than 2-3 short paragraphs or 5-6 bullet points.\n"
-                "2. NO FLUFF. Answer the question directly and stop.\n"
-                "3. Use professional, clean formatting with bullet points. Avoid markdown symbols like ## or **.\n\n"
-                "DOCUMENT ATTRIBUTION:\n"
-                "1. EXPLICITLY reference which PDF each piece of information came from.\n"
-                "2. If comparing docs, use structured 'COMMON' and 'DIFFERENT' sections.\n\n"
-                "FOLLOW-UP GENERATION:\n"
-                "At the very end, provide exactly 2-3 smart follow-up questions.\n"
-                "Format exactly like this (no other text after):\n\n"
-                "SOURCES: [{\"text\": \"Exact text\", \"page\": 1, \"filename\": \"doc.pdf\"}]\n"
-                "SUGGESTIONS: [Question 1] | [Question 2] | [Question 3]"
-            )
-        }
+        {"role": "system", "content": system_prompt}
     ]
 
     if conversation_history:
-        for msg in conversation_history[-8:]: # Increased history for better context
+        for msg in conversation_history[-10:]: # Include more history for better flow
             messages.append({
                 "role": msg['role'],
                 "content": msg['content']
@@ -123,53 +190,68 @@ def ask_question(question, relevant, conversation_history=None):
 
     messages.append({
         "role": "user",
-        "content": f"Multi-Document Context:\n{context}\n\nQuestion: {question}"
+        "content": f"Multi-Document Context:\n{context}\n\nUser Question: {question}"
     })
 
+    logger.info(f"!!! [DEBUG_CHAT] Prompt context length: {len(context)} characters from {len(relevant)} chunks")
     try:
-        response = _run_completion(get_primary_client(), messages, temperature=0.3, max_tokens=1200)
+        response = _run_completion(get_primary_client(), messages, temperature=0.3, max_tokens=8192)
     except Exception as e:
-        print(f"Primary AI failed, falling back to secondary: {str(e)}")
-        response = _run_completion(get_secondary_client(), messages, temperature=0.3, max_tokens=1200)
+        logger.warning(f"Primary AI failed, falling back to secondary: {str(e)}")
+        response = _run_completion(get_secondary_client(), messages, temperature=0.3, max_tokens=8192)
 
     answer = response.choices[0].message.content
+    logger.info(f"!!! [DEBUG_CHAT] Response received. Length: {len(answer)} characters")
+    
     # Include filename in sources
-    sources = [{'page': c['page'], 'text': c['text'][:150] + '...', 'filename': c.get('filename')} for c in relevant[:4]]
+    sources = [{'page': c['page'], 'text': c['text'][:200] + '...', 'filename': c.get('filename')} for c in relevant[:6]]
 
     return answer, sources
 
 
 def summarize(full_text):
-    """Generate a concise summary of the document."""
-    text = full_text[:8000] if len(full_text) > 8000 else full_text
+    """
+    Generate a high-quality, multi-section summary of the document.
+    Scales detail based on document length.
+    """
+    # Increase window for Gemini's large context
+    text_limit = 30000 
+    text = full_text[:text_limit] if len(full_text) > text_limit else full_text
+
+    system_prompt = (
+        "You are an Elite Document Intelligence System.\n\n"
+        "GOAL: Generate a comprehensive, professional, and insightful summary of the provided text.\n\n"
+        "STRUCTURE YOUR RESPONSE EXACTLY AS FOLLOWS:\n\n"
+        "1. OVERVIEW: A professional 2-3 sentence executive summary.\n"
+        "2. KEY CONCEPTS: 3-5 core pillars or themes discussed.\n"
+        "3. DETAILED INSIGHTS: A structured breakdown of the most important points, technical details, or data.\n"
+        "4. TERMINOLOGY & DEFINITIONS: Important terms, formulas, or jargon defined (if applicable).\n"
+        "5. CRITICAL TAKEAWAYS: Actionable conclusions or final summary thoughts.\n\n"
+        "STYLE RULES:\n"
+        "- Use clean Markdown (headings, bullet points, bolding).\n"
+        "- Scale the detail level based on the document complexity. Do NOT write a short summary if the document is large. Provide a DEEP dive.\n"
+        "- Be insightful, not just descriptive.\n\n"
+        "FOLLOW-UP SUGGESTIONS:\n"
+        "At the very end, provide exactly 3-4 smart, high-value follow-up questions for the user.\n"
+        "Format exactly like this (no other text after):\n\n"
+        "SUGGESTIONS: [Question 1] | [Question 2] | [Question 3] | [Question 4]"
+    )
 
     messages = [
-        {
-            "role": "system",
-            "content": (
-                "STRICT BREVITY RULES:\n"
-                "- Maximum 150 words. Focus only on core gist.\n"
-                "- Use 3-4 bullet points maximum.\n"
-                "- NO markdown symbols like ** or ##.\n"
-                "- Talk like a helpful, concise human.\n\n"
-                "FOLLOW-UP GENERATION:\n"
-                "At the very end, provide exactly 2-3 smart follow-up questions.\n"
-                "Format: SUGGESTIONS: [Question 1] | [Question 2] | [Question 3]"
-            )
-        },
-        {
-            "role": "user",
-            "content": f"Document text:\n\n{text}"
-        }
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Please analyze and summarize this document:\n\n{text}"}
     ]
 
     try:
-        response = _run_completion(get_primary_client(), messages, temperature=0.3, max_tokens=800)
+        logger.info(f"!!! [DEBUG_SUMMARY] Requesting summary for text of length: {len(text)} characters")
+        response = _run_completion(get_primary_client(), messages, temperature=0.3, max_tokens=8192)
     except Exception as e:
-        print(f"Primary Summarization failed, falling back to secondary: {str(e)}")
-        response = _run_completion(get_secondary_client(), messages, temperature=0.3, max_tokens=800)
+        logger.warning(f"Primary Summarization failed, falling back to secondary: {str(e)}")
+        response = _run_completion(get_secondary_client(), messages, temperature=0.3, max_tokens=8192)
 
-    return response.choices[0].message.content
+    answer = response.choices[0].message.content
+    logger.info(f"!!! [DEBUG_SUMMARY] Summary generated. Length: {len(answer)} characters")
+    return answer
 
 
 def generate_quiz(full_text, num_questions=5):
@@ -214,18 +296,17 @@ def explain_simply(full_text, user_question=None):
     """
     FEATURE 2: Explain Like I'm a Beginner
     Translates complex content into simple, conversational tutor-like explanations.
-    Uses PRIMARY GEMINI KEY as requested.
     """
-    text = full_text[:12000] if len(full_text) > 12000 else full_text
+    text = full_text[:20000] if len(full_text) > 20000 else full_text
     
     system_prompt = (
-        "You are an expert AI tutor. Explain simply but EXTREMELY CONCISELY.\n\n"
-        "STRICT BREVITY RULES:\n"
-        "- Maximum 3-4 short paragraphs.\n"
-        "- Use short bullet points (•).\n"
-        "- Explain like teaching a 10-year-old.\n"
-        "- NO markdown symbols like ** or ##.\n"
-        "- Relatable examples only if they are short.\n\n"
+        "You are an expert AI tutor specialized in simplification without losing essence.\n\n"
+        "GOAL: Explain complex document concepts in a way that is easy to understand but still deep and accurate.\n\n"
+        "GUIDELINES:\n"
+        "- Use relatable analogies and real-world examples.\n"
+        "- Break down technical jargon into plain language.\n"
+        "- Use Markdown (bolding, lists, headings) for readability.\n"
+        "- Be encouraging and tutor-like.\n\n"
         "FOLLOW-UP GENERATION:\n"
         "At the very end, provide exactly 3 smart follow-up prompts.\n"
         "Format: SUGGESTIONS: [Prompt 1] | [Prompt 2] | [Prompt 3]"
@@ -237,41 +318,38 @@ def explain_simply(full_text, user_question=None):
     ]
 
     try:
-        try:
-            response = _run_completion(get_primary_client(), messages, temperature=0.5, max_tokens=1200)
-        except Exception:
-            print("Primary Explanation failed, falling back to secondary...")
-            response = _run_completion(get_secondary_client(), messages, temperature=0.5, max_tokens=1200)
+        response = _run_completion(get_primary_client(), messages, temperature=0.5, max_tokens=1500)
         return response.choices[0].message.content
     except Exception as e:
-        print(f"AI Service Error (explain_simply): {str(e)}")
-        raise e
+        logger.warning(f"Primary explanation failed, falling back: {e}")
+        response = _run_completion(get_secondary_client(), messages, temperature=0.5, max_tokens=1500)
+        return response.choices[0].message.content
 
 def explain_document(full_text):
     """Old alias for explain_simply for compatibility."""
     return explain_simply(full_text)
 
 def rewrite_text(text):
-    """Rewrite text in simpler language."""
+    """Rewrite text for maximum clarity and professional impact."""
     messages = [
         {
             "role": "system",
             "content": (
-                "You are a writing assistant. Rewrite in clearer, simpler, pointwise language.\n"
+                "You are a Senior Editor and Writing Assistant.\n"
+                "GOAL: Rewrite the provided text to be professional, clear, and high-impact while maintaining all core information.\n"
                 "RULES:\n"
-                "1. BE CONCISE. Maximum 2-3 bullet points.\n"
-                "2. DO NOT use markdown symbols like ** or ##.\n"
-                "3. Use short sentences."
+                "1. Use professional, clean formatting with Markdown.\n"
+                "2. Improve sentence structure and flow.\n"
+                "3. Ensure the tone is authoritative and polished."
             )
         },
         {
             "role": "user",
-            "content": f"Please rewrite this text simply:\n\n{text}"
+            "content": f"Please rewrite this text professionally:\n\n{text}"
         }
     ]
 
-    response = _run_completion(get_primary_client(), messages, temperature=0.4, max_tokens=800)
-
+    response = _run_completion(get_primary_client(), messages, temperature=0.4, max_tokens=1500)
     return response.choices[0].message.content
 
 
@@ -279,30 +357,24 @@ import re
 
 def generate_study_toolkit(full_text):
     """
-    Industrial-grade Study Toolkit pipeline with safe cleaning and retry logic.
-    Follows user's exact prompt and response flow requirements.
+    Industrial-grade Study Toolkit pipeline with rich, deep content generation.
     """
-    text = full_text[:12000] if len(full_text) > 12000 else full_text
+    text = full_text[:25000] if len(full_text) > 25000 else full_text
     
-    # EXACT Gemini Prompt as requested
     prompt = (
-        "You are an AI Study Toolkit assistant.\n\n"
-        "Analyze the uploaded PDF and return ONLY STRICT VALID JSON.\n\n"
-        "Generate:\n\n"
-        "key concepts\n"
-        "important definitions\n"
-        "likely exam questions\n"
-        "flashcards\n"
-        "mini quiz\n"
-        "revision notes\n\n"
-        "Rules:\n\n"
-        "concise explanations\n"
-        "student-friendly wording\n"
-        "no markdown\n"
-        "no extra commentary\n"
-        "no explanation outside JSON\n"
-        "return ONLY valid JSON\n\n"
-        "Required JSON structure:\n\n"
+        "You are an Elite AI Study Architect.\n\n"
+        "Analyze the document and return ONLY STRICT VALID JSON.\n\n"
+        "Generate deep, high-value study materials:\n"
+        "1. keyConcepts: 5-8 major themes with detailed 2-sentence descriptions.\n"
+        "2. definitions: 5-10 technical terms or jargon defined professionally.\n"
+        "3. examQuestions: 5 likely high-difficulty exam questions.\n"
+        "4. flashcards: 8 high-quality study cards (front/back).\n"
+        "5. miniQuiz: 5 challenging MCQs with options, correct index, and detailed explanations.\n"
+        "6. revisionNotes: Detailed, structured summary notes using bullet points.\n\n"
+        "RULES:\n"
+        "- NO MARKDOWN symbols inside the JSON strings.\n"
+        "- Ensure the JSON is perfectly valid.\n\n"
+        "Required JSON structure:\n"
         "{\n"
         '  "keyConcepts": [],\n'
         '  "definitions": [{"term": "string", "definition": "string"}],\n'
@@ -321,68 +393,37 @@ def generate_study_toolkit(full_text):
     max_attempts = 2
     for attempt in range(max_attempts):
         try:
-            # Use secondary client for attempt 1, fallback to primary for attempt 2 if needed
-            client_to_use = get_secondary_client() if attempt == 0 else get_primary_client()
-            print(f"Study Toolkit: Attempt {attempt + 1}...")
-            
-            response = _run_completion(client_to_use, messages, temperature=0.5, max_tokens=3000)
+            client_to_use = get_primary_client() if attempt == 0 else get_secondary_client()
+            logger.info(f"!!! [DEBUG_TOOLKIT] Requesting toolkit generation (Attempt {attempt+1}) for text length: {len(text)}")
+            response = _run_completion(client_to_use, messages, temperature=0.5, max_tokens=8192)
             raw_content = response.choices[0].message.content.strip()
+            logger.info(f"!!! [DEBUG_TOOLKIT] Toolkit generated. Length: {len(raw_content)} characters")
             
-            # SAFE CLEANING LOGIC (EXACTLY AS REQUESTED)
-            # 1. Strip markdown wrappers
+            # Cleaning logic
             cleaned = raw_content
-            if cleaned.startswith("```json"):
-                cleaned = cleaned[7:]
-            elif cleaned.startswith("```"):
-                cleaned = cleaned[3:]
+            if "```json" in cleaned: cleaned = cleaned.split("```json")[1].split("```")[0]
+            elif "```" in cleaned: cleaned = cleaned.split("```")[1].split("```")[0]
             
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-            
-            # 2. Trim whitespace
-            cleaned = cleaned.strip()
-            
-            # 3. Handle potential commentary before/after JSON using regex
             json_match = re.search(r'(\{.*\})', cleaned, re.DOTALL)
-            if json_match:
-                cleaned = json_match.group(1)
+            if json_match: cleaned = json_match.group(1)
             
-            # 4. Validate JSON
-            data = json.loads(cleaned)
+            data = json.loads(cleaned.strip())
             
-            # 5. Guarantee structured response keys
-            required = ["keyConcepts", "definitions", "examQuestions", "flashcards", "miniQuiz", "revisionNotes"]
-            for key in required:
-                if key not in data or not isinstance(data[key], list):
-                    data[key] = []
-            
-            # Deep Sanitization for Mini Quiz (Match correct answers)
+            # Sanitization for quiz
             if "miniQuiz" in data:
                 for q in data["miniQuiz"]:
                     if not isinstance(q, dict): continue
                     val = q.get("correct")
                     if isinstance(val, str):
-                        # Convert letter or string number
                         v = val.strip().upper()
                         if v in ["A", "B", "C", "D"]: q["correct"] = ord(v) - ord("A")
                         elif v.isdigit(): q["correct"] = int(v)
-                        else:
-                            # Search for match in options
-                            q["correct"] = 0
-                            for idx, opt in enumerate(q.get("options", [])):
-                                if str(opt).lower() == v.lower():
-                                    q["correct"] = idx
-                                    break
             
-            print("Study Toolkit: Generation Successful.")
             return data
-            
         except Exception as e:
-            print(f"Study Toolkit: Attempt {attempt + 1} failed: {str(e)}")
-            if attempt == max_attempts - 1:
-                break
+            logger.warning(f"Study Toolkit attempt {attempt+1} failed: {e}")
+            if attempt == max_attempts - 1: break
     
-    # FAILSAFE FALLBACK (Only if all attempts fail)
     return {
         "keyConcepts": ["Analysis encountered a temporary snag."],
         "definitions": [{"term": "Status", "definition": "Please click 'Retry Analysis' to try again."}],
@@ -392,88 +433,43 @@ def generate_study_toolkit(full_text):
         "revisionNotes": ["We couldn't generate detailed insights for this document right now."]
     }
 
-
 def generate_flashcards(full_text):
-    """Generate 5 key concept flashcards from the document."""
-    text = full_text[:8000] if len(full_text) > 8000 else full_text
-
-    response = _run_completion(get_secondary_client(), [
-        {
-            "role": "system",
-            "content": (
-                "You are a study assistant. Generate 5 high-quality flashcards from the document. "
-                "Return ONLY a valid JSON array of objects. Each object must have: "
-                "'front' (the question or concept) and 'back' (the answer or definition). "
-                "Do not include any text outside the JSON array."
-            )
-        },
-        {
-            "role": "user",
-            "content": f"Generate 5 flashcards from this document:\n\n{text}"
-        }
-    ], temperature=0.5, max_tokens=1500)
-    
+    """Generate 10 high-quality flashcards."""
+    text = full_text[:15000] if len(full_text) > 15000 else full_text
+    messages = [
+        {"role": "system", "content": "Generate 10 high-quality study flashcards in JSON array: [{'front': '...', 'back': '...'}]"},
+        {"role": "user", "content": text}
+    ]
     try:
+        response = _run_completion(get_primary_client(), messages, temperature=0.5, max_tokens=2000)
         content = response.choices[0].message.content.strip()
-        if content.startswith('```'):
-            content = content.split('```')[1]
-            if content.startswith('json'):
-                content = content[4:]
+        if "```json" in content: content = content.split("```json")[1].split("```")[0]
         return json.loads(content)
-    except (json.JSONDecodeError, IndexError):
-        return [
-            {"front": "Error", "back": "Failed to generate flashcards. Please try again."},
-            {"front": "Tip", "back": "Ensure the document contains readable text."}
-        ]
+    except:
+        return [{"front": "Error", "back": "Failed to generate."}]
 
 def run_advanced_tool(full_text, tool_name):
-    """Run specialized advanced document tools."""
-    text = full_text[:12000] if len(full_text) > 12000 else full_text
+    """Run specialized advanced document tools with high-fidelity prompts."""
+    text = full_text[:25000] if len(full_text) > 25000 else full_text
 
     prompts = {
         'explain_simply': (
-            "You are a teacher explaining this document to a beginner.\n"
-            "1. Start with 'Here is a simple explanation:'\n"
-            "2. Break down complex terms.\n"
-            "3. Use real-world examples.\n"
-            "4. Keep it concise, using bullet points.\n"
-            "5. NO markdown symbols like ** or ##."
+            "You are an expert teacher. Explain this document like I'm a beginner but do not sacrifice detail.\n"
+            "Break down complex systems and use analogies. Use rich Markdown for structure."
         ),
         'notes': (
-            "You are an expert note-taker. Generate concise, revision-friendly notes from this document.\n"
-            "1. Group by key topics.\n"
-            "2. Use bullet points.\n"
-            "3. Highlight main takeaways.\n"
-            "4. Keep it brief and structured.\n"
-            "5. NO markdown symbols like ** or ##."
+            "You are a Master Note-Taker. Create comprehensive, structured revision notes from this document.\n"
+            "Use clear headings, bold important terms, and organize by hierarchy of importance. Use full Markdown."
         ),
         'exam_prep': (
-            "You are an exam prep assistant. Generate a study guide from this document.\n"
-            "1. List 3 Likely Exam Questions.\n"
-            "2. List 3 Important Theory Topics to memorize.\n"
-            "3. List 2 Viva/Oral questions.\n"
-            "4. Format cleanly using spacing.\n"
-            "5. NO markdown symbols like ** or ##."
+            "You are an Elite Exam Coach. Create a high-stakes study guide from this document.\n"
+            "Identify likely exam questions, core theory topics to memorize, and Viva/oral exam questions.\n"
+            "Provide brief model answers for each question using Markdown."
         ),
         'study': (
-            "You are a premium AI study assistant. Analyze this document and provide a comprehensive Study Mode output.\n"
-            "Return exactly 4 sections in this format (using single empty lines between sections):\n\n"
-            "Key Concepts:\n"
-            "• [Concept 1]\n"
-            "• [Concept 2]...\n\n"
-            "Revision Notes:\n"
-            "• [Point 1]\n"
-            "• [Point 2]...\n\n"
-            "Important Questions:\n"
-            "• [Question 1]?\n"
-            "• [Question 2]?...\n\n"
-            "Quick Summary:\n"
-            "• [Summary sentence 1]\n"
-            "• [Summary sentence 2]...\n\n"
-            "RULES:\n"
-            "1. BE CONCISE and INTELLIGENT.\n"
-            "2. DO NOT use markdown symbols like ** or ##.\n"
-            "3. Use bullet points (•) for all items."
+            "You are a Premium AI Study Architect. Provide a comprehensive, deep-dive Study Mode output.\n"
+            "Sections: Key Concepts, Detailed Revision Notes, Predicted Exam Questions, and a High-Level Summary.\n"
+            "Use clean, professional Markdown formatting (Headings, Bullets, Bolding)."
         )
     }
 
@@ -481,15 +477,9 @@ def run_advanced_tool(full_text, tool_name):
         raise ValueError("Invalid tool name.")
 
     messages = [
-        {
-            "role": "system",
-            "content": prompts[tool_name]
-        },
-        {
-            "role": "user",
-            "content": f"Document content:\n\n{text}"
-        }
+        {"role": "system", "content": prompts[tool_name]},
+        {"role": "user", "content": f"Analyze this content:\n\n{text}"}
     ]
 
-    response = _run_completion(get_secondary_client(), messages, temperature=0.4, max_tokens=1500)
+    response = _run_completion(get_secondary_client(), messages, temperature=0.4, max_tokens=2500)
     return response.choices[0].message.content

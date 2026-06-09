@@ -7,8 +7,13 @@ import ConversationList from './ConversationList';
 
 export default function Sidebar() {
   const navigate = useNavigate();
-  const { state, newAnalysis, uploadDocument, startMultiPDFChat, clearAllHistory, dispatch } = useApp();
+  const { state, newAnalysis, uploadDocument, startMultiPDFChat, clearAllHistory, fetchHistory, dispatch } = useApp();
   const fileInputRef = useRef(null);
+
+  React.useEffect(() => {
+    fetchHistory();
+    // Only fetch once on mount to prevent infinite loops with unstable context functions
+  }, []); 
 
   const handleAddPDF = () => {
     fileInputRef.current?.click();

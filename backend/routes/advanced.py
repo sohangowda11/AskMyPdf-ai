@@ -1,13 +1,16 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from services.ai_service import run_advanced_tool
 from store import store
+from utils.auth import require_auth
 import logging
 
 advanced_bp = Blueprint('advanced', __name__)
 logger = logging.getLogger(__name__)
 
 @advanced_bp.route('/explain-simply', methods=['POST'])
+@require_auth
 def explain_simply_route():
+    user_id = g.user.id
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -19,7 +22,7 @@ def explain_simply_route():
     if not doc_id:
         return jsonify({'error': 'Missing doc_id.'}), 400
 
-    doc = store.get_document(doc_id)
+    doc = store.get_document(doc_id, user_id=user_id)
     if not doc:
         return jsonify({'error': 'Document not found.'}), 404
 
@@ -43,7 +46,9 @@ def explain_simply_route():
         return jsonify({'error': 'Failed to generate simplified explanation.'}), 500
 
 @advanced_bp.route('/advanced', methods=['POST'])
+@require_auth
 def run_tool():
+    user_id = g.user.id
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -55,7 +60,7 @@ def run_tool():
     if not doc_id or not tool_name:
         return jsonify({'error': 'Missing doc_id or tool_name.'}), 400
 
-    doc = store.get_document(doc_id)
+    doc = store.get_document(doc_id, user_id=user_id)
     if not doc:
         return jsonify({'error': 'Document not found in session.'}), 404
 

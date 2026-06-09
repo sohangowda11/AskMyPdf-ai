@@ -72,79 +72,79 @@ export default function ChatPanel() {
       {/* Spacious Message Stream */}
       <div 
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto pt-10 pb-44 px-6 md:px-10 custom-scrollbar bg-white dark:bg-[#0f1117] gpu-accelerated"
+        className="flex-1 overflow-y-auto px-4 md:px-8 custom-scrollbar bg-white dark:bg-[#0f1117] scroll-smooth"
       >
-        {state.messages.length === 0 && (
-          <motion.div
-            className="flex flex-col items-center justify-center h-full text-center max-w-sm mx-auto opacity-40"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
-            <h4 className="text-xl font-black text-slate-900 dark:text-slate-100 mb-2 tracking-tight uppercase tracking-[0.2em]">Ready for Analysis</h4>
-            <p className="text-[12px] text-slate-500 font-bold leading-relaxed">
-              Upload a document or select an action to begin.
-            </p>
-          </motion.div>
-        )}
-
-        <div className="space-y-12 max-w-3xl mx-auto">
-          {state.messages.map((msg, i) => (
-            <ChatMessage key={msg.id || i} message={msg} />
-          ))}
-          
-          <AnimatePresence>
-            {state.isGeneratingQuiz && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="flex items-start gap-4"
-              >
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 border shadow-sm bg-orange-600 border-orange-500 text-white">
-                  <Sparkles size={16} />
-                </div>
-                <div className="max-w-[75%]">
-                   <div className="px-5 py-4 rounded-[24px] rounded-tl-none bg-slate-50/50 dark:bg-[#1b1f2a] border border-slate-100 dark:border-slate-800/60 shadow-sm relative overflow-hidden group">
-                      {/* Shimmer Effect */}
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 dark:via-white/[0.02] to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
-                      
-                      <div className="flex flex-col gap-1">
-                         <p className="text-[14px] font-bold text-slate-700 dark:text-slate-300">
-                           Analyzing PDF and generating questions...
-                         </p>
-                         <div className="flex gap-1.5 mt-1 opacity-40">
-                            <div className="w-1 h-1 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                            <div className="w-1 h-1 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                            <div className="w-1 h-1 bg-orange-500 rounded-full animate-bounce" />
-                         </div>
-                      </div>
-                   </div>
-                </div>
-              </motion.div>
-            )}
-
-          </AnimatePresence>
-
-          {state.isSending && (
-            <motion.div 
-              className="flex items-center gap-3 pl-2 opacity-20"
+        <div className="max-w-3xl mx-auto w-full pt-10 pb-10">
+          {state.messages.length === 0 && (
+            <motion.div
+              className="flex flex-col items-center justify-center min-h-[40vh] text-center max-w-sm mx-auto opacity-40 py-20"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
             >
-              <div className="flex gap-2">
-                 <div className="w-1 h-1 bg-slate-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                 <div className="w-1 h-1 bg-slate-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                 <div className="w-1 h-1 bg-slate-500 rounded-full animate-bounce" />
-              </div>
+              <Sparkles size={40} className="text-orange-500 mb-4 animate-pulse" />
+              <h4 className="text-xl font-black text-slate-900 dark:text-slate-100 mb-2 tracking-tight uppercase tracking-[0.2em]">Ready for Analysis</h4>
+              <p className="text-[12px] text-slate-500 font-bold leading-relaxed">
+                Your AI-powered study companion is ready. Upload a PDF or ask a question to begin.
+              </p>
             </motion.div>
           )}
-          <div ref={messagesEndRef} className="h-10" />
+
+          <div className="space-y-10">
+            {state.messages.map((msg, i) => (
+              <ChatMessage key={msg.id || i} message={msg} />
+            ))}
+            
+            <AnimatePresence>
+              {state.isGeneratingQuiz && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="flex items-start gap-4"
+                >
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 border shadow-sm bg-orange-600 border-orange-500 text-white">
+                    <Sparkles size={16} />
+                  </div>
+                  <div className="max-w-[85%] w-full">
+                    <div className="px-5 py-4 rounded-[24px] rounded-tl-none bg-slate-50/50 dark:bg-[#1b1f2a] border border-slate-100 dark:border-slate-800/60 shadow-sm relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 dark:via-white/[0.02] to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
+                        <div className="flex flex-col gap-1">
+                          <p className="text-[14px] font-bold text-slate-700 dark:text-slate-300 italic">
+                            Thinking... Analyzing document architecture
+                          </p>
+                          <div className="flex gap-1.5 mt-1 opacity-40">
+                              <div className="w-1 h-1 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                              <div className="w-1 h-1 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                              <div className="w-1 h-1 bg-orange-500 rounded-full animate-bounce" />
+                          </div>
+                        </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {state.isSending && (
+              <motion.div 
+                className="flex items-center gap-3 pl-14 opacity-20"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
+                <div className="flex gap-2">
+                  <div className="w-1 h-1 bg-slate-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                  <div className="w-1 h-1 bg-slate-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                  <div className="w-1 h-1 bg-slate-500 rounded-full animate-bounce" />
+                </div>
+              </motion.div>
+            )}
+            <div ref={messagesEndRef} className="h-4" />
+          </div>
         </div>
       </div>
 
-      {/* Floating Entry Hub */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-white dark:from-[#0f1117] via-white/90 dark:via-[#0f1117]/90 to-transparent z-30 pointer-events-none">
-        <div className="max-w-3xl mx-auto pointer-events-auto flex flex-col gap-4">
+      {/* Modern sticky composer area */}
+      <div className="flex-shrink-0 px-4 pb-6 pt-4 bg-white dark:bg-[#0f1117] border-t border-slate-50 dark:border-slate-800/40">
+        <div className="max-w-3xl mx-auto flex flex-col gap-4">
           <AnimatePresence>
             {!state.isGeneratingQuiz && (
               <motion.div 

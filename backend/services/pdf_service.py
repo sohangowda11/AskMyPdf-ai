@@ -2,7 +2,11 @@ import fitz  # PyMuPDF
 
 
 def extract_text(filepath):
-    """Extract text from each page of a PDF with OCR fallback."""
+    """Extract text from each page of a PDF with verbose logging."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"!!! [PIPELINE_EXTRACTION] Opening PDF: {filepath}")
     doc = fitz.open(filepath)
     pages = []
     
@@ -10,20 +14,25 @@ def extract_text(filepath):
         page = doc[page_num]
         text = page.get_text()
         
-        # OCR fallback removed for production stability on Render
-        pass
+        text_len = len(text.strip())
+        logger.info(f"!!! [PIPELINE_EXTRACTION] Page {page_num+1}: {text_len} characters found")
                 
         if text.strip():
             pages.append({
                 'page': page_num + 1,
                 'text': text.strip()
             })
+            
     doc.close()
+    logger.info(f"!!! [PIPELINE_EXTRACTION] TOTAL: {len(pages)} readable pages extracted")
     return pages
 
 
 def chunk_text(pages, chunk_size=1000, overlap=200):
-    """Split pages into overlapping chunks for better context retrieval."""
+    """Split pages into overlapping chunks with verbose logging."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     chunks = []
     chunk_id = 0
     for page_data in pages:
@@ -41,6 +50,8 @@ def chunk_text(pages, chunk_size=1000, overlap=200):
                 })
                 chunk_id += 1
             start += chunk_size - overlap
+            
+    logger.info(f"!!! [PIPELINE_CHUNKING] Generated {len(chunks)} chunks from {len(pages)} pages")
     return chunks
 
 

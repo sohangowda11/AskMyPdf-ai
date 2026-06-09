@@ -1,11 +1,13 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Moon, Sun, Home, Sparkles } from 'lucide-react';
+import { Moon, Sun, Home, Sparkles, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../hooks/useApp';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Header() {
   const { state, dispatch, goHome } = useApp();
+  const { signOut } = useAuth();
   const navigate = useNavigate();
   const isDark = state.theme === 'dark';
 
@@ -72,6 +74,24 @@ export default function Header() {
               </motion.div>
             )}
           </AnimatePresence>
+        </motion.button>
+
+        <motion.button
+          onClick={async () => {
+            try {
+              await signOut();
+              dispatch({ type: 'LOGOUT' });
+              navigate('/');
+            } catch (err) {
+              console.error("Logout failed:", err);
+            }
+          }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          title="Log Out"
+          className="w-11 h-11 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl flex items-center justify-center text-red-500 hover:bg-red-500 hover:text-white transition-all"
+        >
+          <LogOut size={18} />
         </motion.button>
       </div>
     </header>

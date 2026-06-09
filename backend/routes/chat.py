@@ -1,19 +1,22 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from services.ai_service import ask_question
 from store import store
+from utils.auth import require_auth
 
 chat_bp = Blueprint('chat', __name__)
 
 
 @chat_bp.route('/chat', methods=['POST'])
+@require_auth
 def chat():
+    user_id = g.user.id
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
 
     # Get conversation first to determine mode and documents
     conv_id = data.get('conversation_id')
-    conv = store.get_conversation(conv_id)
+    conv = store.get_conversation(conv_id, user_id=user_id)
     if not conv:
         return jsonify({'error': 'Conversation not found'}), 404
 
@@ -39,17 +42,19 @@ def chat():
 
     # Initialize Multi-PDF Session Manager
     from services.context_manager import get_multi_pdf_session
-    session = get_multi_pdf_session(doc_ids)
+    session = get_multi_pdf_session(doc_ids, user_id)
     
     if not session.documents:
         return jsonify({'error': 'Session expired or documents not found. Please re-upload your PDF(s) to continue.'}), 404
         
     all_relevant = session.get_combined_context(message)
+    logger.info(f"!!! [PIPELINE_CHAT] 1. Retrieved {len(all_relevant)} context chunks")
 
     if not all_relevant:
+        logger.warning(f"!!! [PIPELINE_CHAT] 404: No relevant context found")
         return jsonify({'error': 'No relevant information found across the selected PDFs. Try a different question.'}), 404
 
-    conv = store.get_conversation(conv_id)
+    conv = store.get_conversation(conv_id, user_id=user_id)
     if not conv:
         return jsonify({'error': 'Conversation not found'}), 404
 
@@ -90,7 +95,7 @@ def chat():
                 # Ensure each extracted source has the correct doc_id by matching filename
                 for s in extracted_sources:
                     if 'filename' in s:
-                        matching_doc = next((d_id for d_id in doc_ids if store.get_document(d_id) and store.get_document(d_id)['filename'] == s['filename']), None)
+                        matching_doc = next((d_id for d_id in doc_ids if store.get_document(d_id, user_id=user_id) and store.get_document(d_id, user_id=user_id)['filename'] == s['filename']), None)
                         if matching_doc:
                             s['doc_id'] = matching_doc
             except Exception as e:

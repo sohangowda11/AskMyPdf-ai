@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect, useMemo, useRef } from 'react';
 import * as api from '../api/api';
 
 export const AppContext = createContext(null);
@@ -26,6 +26,9 @@ const initialState = {
   notification: null,
   theme: localStorage.getItem('theme') || 'light',
   isWorkspaceActive: false,
+  resolvedPdfUrl: null,
+  pdfResolutionStatus: 'idle', // 'idle' | 'loading' | 'success' | 'error'
+  errorCode: null,
   utilityPanel: {
     isOpen: false,
     activeTool: null,
@@ -59,7 +62,10 @@ function reducer(state, action) {
       return { ...state, isGeneratingQuiz: action.payload };
     case 'SET_ERROR':
       const errMsg = typeof action.payload === 'string' ? action.payload : (action.payload?.error || action.payload?.message || JSON.stringify(action.payload));
-      return { ...state, error: String(errMsg) };
+      const cleanErrMsg = String(errMsg).length > 150 
+        ? "AI service encountered an error. The document might be too large or the API quota was exceeded."
+        : String(errMsg);
+      return { ...state, error: cleanErrMsg };
     case 'CLEAR_ERROR':
       return { ...state, error: null };
     case 'SET_CONVERSATIONS':
@@ -69,8 +75,12 @@ function reducer(state, action) {
     case 'SET_ACTIVE_CONVERSATION':
       return { ...state, activeConversation: action.payload };
     case 'SET_ACTIVE_DOCUMENT':
+      // Prevent redundant updates if it's the same document
+      if (state.activeDocument?.doc_id === action.payload?.doc_id) return state;
       return { ...state, activeDocument: action.payload };
     case 'SET_PDF_URL':
+      // Prevent redundant updates to stop PDF flickering
+      if (state.pdfUrl === action.payload) return state;
       return { ...state, pdfUrl: action.payload };
     case 'SET_MESSAGES':
       return { ...state, messages: action.payload };
@@ -149,6 +159,25 @@ function reducer(state, action) {
         isMultiPDFMode: false,
         isWorkspaceActive: false
       };
+    case 'SET_RESOLVED_PDF_URL':
+      return { 
+        ...state, 
+        resolvedPdfUrl: action.payload.url, 
+        pdfResolutionStatus: action.payload.status,
+        errorCode: action.payload.errorCode || null
+      };
+    case 'CLEAR_RESOLVED_PDF_URL':
+      return { 
+        ...state, 
+        resolvedPdfUrl: null, 
+        pdfResolutionStatus: 'idle' 
+      };
+    case 'LOGOUT':
+      return {
+        ...initialState,
+        theme: state.theme,
+        isLoading: false
+      };
     default:
       return state;
   }
@@ -166,10 +195,103 @@ export function AppProvider({ children }) {
   }, [state.theme]);
 
   const showNotification = useCallback((message, type = 'info', duration = 3000) => {
-    const msg = typeof message === 'string' ? message : (message?.error || message?.message || JSON.stringify(message));
-    dispatch({ type: 'SET_NOTIFICATION', payload: { message: String(msg), type } });
+    const rawMsg = typeof message === 'string' ? message : (message?.error || message?.message || JSON.stringify(message));
+    const cleanMsg = String(rawMsg).length > 120 
+      ? "AI service encountered an error (e.g., rate limits or doc length). Please try again later."
+      : String(rawMsg);
+      
+    dispatch({ type: 'SET_NOTIFICATION', payload: { message: cleanMsg, type } });
     setTimeout(() => dispatch({ type: 'CLEAR_NOTIFICATION' }), duration);
   }, []);
+
+  const loadConversation = useCallback(async (conv) => {
+    if (!conv?.conversation_id) return;
+    
+    console.log(">>> [LOAD_CONV] Initializing hydration for:", conv.conversation_id);
+    
+    // 1. Set preliminary state to show active item in sidebar immediately
+    dispatch({ type: 'SET_ACTIVE_CONVERSATION', payload: conv });
+    dispatch({ type: 'SET_WORKSPACE_ACTIVE', payload: true });
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'CLEAR_ERROR' });
+
+    try {
+      // 2. Fetch fresh data from backend
+      const data = await api.getConversation(conv.conversation_id);
+      
+      if (!data) throw new Error("Conversation data not found");
+
+      // 3. Hydrate Messages
+      dispatch({ type: 'SET_MESSAGES', payload: data.messages || [] });
+      
+      // 4. Hydrate Active Document
+      const docInfo = {
+        doc_id: data.doc_id,
+        filename: data.title || data.filename,
+        page_count: 0
+      };
+      dispatch({ type: 'SET_ACTIVE_DOCUMENT', payload: docInfo });
+      dispatch({ type: 'SET_ACTIVE_DOCUMENTS', payload: [] });
+
+      // 5. Restore Study Toolkit / Summary state if it exists
+      if (data.summary) {
+        dispatch({ 
+          type: 'SET_STUDY_TOOLKIT', 
+          payload: { data: { summary: data.summary }, isLoading: false, isOpen: false } 
+        });
+      }
+
+      // 6. Securely fetch PDF Blob for the viewer
+      try {
+        console.log(">>> [LOAD_CONV] Fetching secure PDF blob for doc:", data.doc_id);
+        const blobUrl = await api.fetchPDFBlobById(data.doc_id);
+        dispatch({ type: 'SET_PDF_URL', payload: blobUrl });
+      } catch (blobErr) {
+        console.error(">>> [LOAD_CONV] PDF Fetch failed:", blobErr);
+        // Fallback to legacy URL if blob fails (might be unowned doc)
+        dispatch({ type: 'SET_PDF_URL', payload: api.getPDFUrl(data.filename) });
+      }
+
+      // 7. Persist selection
+      localStorage.setItem('lastActiveConversationId', conv.conversation_id);
+      
+      console.log(">>> [LOAD_CONV] Hydration complete for:", data.title);
+    } catch (err) {
+      console.error(">>> [LOAD_CONV] Hydration failed:", err);
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to restore conversation history.' });
+      showNotification('History sync failed. Please try again.', 'error');
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, [showNotification]);
+
+  // PERSISTENCE: Restore last active conversation on mount
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        const data = await api.getHistory();
+        dispatch({ type: 'SET_CONVERSATIONS', payload: data.conversations || [] });
+        
+        // Try to restore last active conversation
+        const lastActiveId = localStorage.getItem('lastActiveConversationId');
+        if (lastActiveId && data.conversations?.length > 0) {
+          const lastConv = data.conversations.find(c => c.conversation_id === lastActiveId);
+          if (lastConv) {
+            console.log("!!! [PERSISTENCE] Restoring last active conversation:", lastActiveId);
+            loadConversation({ conversation_id: lastActiveId });
+          } else {
+            dispatch({ type: 'SET_LOADING', payload: false });
+          }
+        } else {
+          dispatch({ type: 'SET_LOADING', payload: false });
+        }
+      } catch (err) {
+        console.error("!!! [PERSISTENCE] Init failed:", err);
+        dispatch({ type: 'SET_LOADING', payload: false });
+      }
+    };
+    initialize();
+  }, [loadConversation]); // Only on mount, but depends on stable loadConversation
 
   const uploadDocument = useCallback(async (file) => {
     dispatch({ type: 'SET_UPLOADING', payload: true });
@@ -198,17 +320,22 @@ export function AppProvider({ children }) {
         created_at: new Date().toISOString(),
       };
 
-      const pdfUrl = api.getPDFUrl(data.filename);
-      console.log(">>> GENERATED PDF URL:", pdfUrl);
+      // Fetch Blob immediately for the viewer to avoid legacy URL flicker
+      try {
+        const blobUrl = await api.fetchPDFBlobById(data.doc_id);
+        dispatch({ type: 'SET_PDF_URL', payload: blobUrl });
+      } catch (err) {
+        dispatch({ type: 'SET_PDF_URL', payload: api.getPDFUrl(data.filename) });
+      }
 
       dispatch({ type: 'SET_ACTIVE_DOCUMENT', payload: docInfo });
-      dispatch({ type: 'SET_PDF_URL', payload: pdfUrl });
       dispatch({ type: 'SET_ACTIVE_CONVERSATION', payload: convInfo });
       dispatch({ type: 'ADD_CONVERSATION', payload: convInfo });
       dispatch({ type: 'SET_MESSAGES', payload: [] });
       dispatch({ type: 'SET_WORKSPACE_ACTIVE', payload: true });
-
-      console.log(">>> STATE DISPATCHED. Active Doc:", docInfo.filename);
+      
+      // Save for persistence
+      localStorage.setItem('lastActiveConversationId', data.conversation_id);
 
       // Add welcome message
       const welcomeMsg = {
@@ -230,20 +357,44 @@ export function AppProvider({ children }) {
       console.error(">>> CRITICAL UPLOAD FAILURE:", err);
       let errorMsg = 'Sorry, I couldn\'t process that PDF right now. Please try again.';
       
-      if (err.response && err.response.data) {
-        errorMsg = err.response.data.error || `Server Error (${err.response.status})`;
+      if (err.response) {
+        const data = err.response.data;
+        if (err.response.status === 401) {
+          errorMsg = "Authentication failed. Please check your Supabase keys in the backend .env file.";
+        } else if (err.response.status === 500) {
+          errorMsg = data.error || "Server error. This usually means the backend .env keys are invalid.";
+        } else {
+          errorMsg = data.error || `Upload failed (${err.response.status})`;
+        }
       } else if (err.request) {
-        errorMsg = 'Server is unreachable. Please check your connection.';
-      } else if (err.message) {
-        errorMsg = err.message;
+        errorMsg = 'Backend is unreachable. Ensure the Flask server is running on port 5001.';
       }
       
       dispatch({ type: 'SET_ERROR', payload: errorMsg });
-      showNotification(errorMsg, 'error');
+      showNotification(errorMsg, 'error', 6000);
       throw err;
     } finally {
       dispatch({ type: 'SET_UPLOADING', payload: false });
     }
+  }, [showNotification]);
+
+  const parseAiResponse = useCallback((rawContent, data = {}) => {
+    if (!rawContent) return { content: "", suggestions: [] };
+    
+    const suggestionMatch = rawContent.match(/SUGGESTIONS:(.*)/s);
+    let suggestions = [];
+    
+    if (suggestionMatch) {
+      suggestions = suggestionMatch[1]
+        .split('|')
+        .map(s => s.replace(/[\[\]]/g, '').trim())
+        .filter(Boolean);
+    } else if (data.suggestions && Array.isArray(data.suggestions)) {
+      suggestions = data.suggestions;
+    }
+    
+    const content = rawContent.replace(/SUGGESTIONS:.*$/s, '').trim();
+    return { content, suggestions };
   }, []);
 
   const sendChatMessage = useCallback(async (message) => {
@@ -261,7 +412,6 @@ export function AppProvider({ children }) {
     dispatch({ type: 'ADD_MESSAGE', payload: userMsg });
 
     try {
-      // Pass list of doc_ids for multi-PDF support
       const docIds = state.isMultiPDFMode 
         ? state.activeDocuments.map(d => d.doc_id)
         : [state.activeDocument.doc_id];
@@ -272,19 +422,15 @@ export function AppProvider({ children }) {
         message
       );
       
-      const rawContent = data.answer || "";
-      const suggestionMatch = rawContent.match(/SUGGESTIONS:(.*)/s);
-      const suggestions = suggestionMatch 
-        ? suggestionMatch[1].split('|').map(s => s.replace(/[\[\]]/g, '').trim()).filter(Boolean)
-        : data.suggestions || [];
+      const { content, suggestions } = parseAiResponse(data.answer || "", data);
 
       const aiMsg = {
-        id: data.message_id,
+        id: data.message_id || Date.now().toString(),
         role: 'assistant',
-        content: rawContent.replace(/SUGGESTIONS:.*$/s, '').trim(),
+        content,
         sources: data.sources || [],
-        suggestions: suggestions,
-        timestamp: data.timestamp,
+        suggestions,
+        timestamp: data.timestamp || new Date().toISOString(),
       };
       dispatch({ type: 'ADD_MESSAGE', payload: aiMsg });
       return data;
@@ -302,12 +448,10 @@ export function AppProvider({ children }) {
     } finally {
       dispatch({ type: 'SET_SENDING', payload: false });
     }
-  }, [state.activeDocument, state.activeDocuments, state.activeConversation, state.isMultiPDFMode]);
+  }, [state.activeDocument, state.activeDocuments, state.activeConversation, state.isMultiPDFMode, parseAiResponse]);
 
   const requestSummary = useCallback(async () => {
-    console.log(">>> requestSummary triggered");
     if (!state.activeDocument) {
-      console.warn("No active document found for summary");
       showNotification('Please upload a PDF first.', 'error');
       return;
     }
@@ -316,33 +460,31 @@ export function AppProvider({ children }) {
     dispatch({ type: 'CLEAR_ERROR' });
 
     try {
-      console.log("Calling api.getSummary with doc_id:", state.activeDocument.doc_id);
       const data = await api.getSummary(
         state.activeDocument.doc_id,
         state.activeConversation?.conversation_id
       );
       
-      console.log("Summary response received:", data);
+      const { content, suggestions } = parseAiResponse(data.summary || "", data);
       
       const aiMsg = {
         id: data.message_id || Date.now().toString(),
         role: 'assistant',
-        content: data.summary,
+        content,
         sources: [],
-        suggestions: data.suggestions || [],
+        suggestions,
         timestamp: new Date().toISOString(),
       };
       
       dispatch({ type: 'ADD_MESSAGE', payload: aiMsg });
     } catch (err) {
-      console.error(">>> requestSummary Error:", err);
       const errorMsg = err.response?.data?.error || 'Failed to generate summary.';
       dispatch({ type: 'SET_ERROR', payload: errorMsg });
       showNotification(errorMsg, 'error');
     } finally {
       dispatch({ type: 'SET_SENDING', payload: false });
     }
-  }, [state.activeDocument, state.activeConversation, showNotification]);
+  }, [state.activeDocument, state.activeConversation, showNotification, parseAiResponse]);
 
   const requestAdvancedTool = useCallback(async (toolName) => {
     if (!state.activeDocument) return;
@@ -356,12 +498,14 @@ export function AppProvider({ children }) {
         state.activeConversation?.conversation_id
       );
 
+      const { content, suggestions } = parseAiResponse(data.result || "", data);
+
       const aiMsg = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: data.result,
+        content,
         sources: [],
-        suggestions: [],
+        suggestions,
         timestamp: new Date().toISOString(),
       };
       
@@ -373,13 +517,10 @@ export function AppProvider({ children }) {
     } finally {
       dispatch({ type: 'SET_SENDING', payload: false });
     }
-  }, [state.activeDocument, state.activeConversation, showNotification]);
+  }, [state.activeDocument, state.activeConversation, showNotification, parseAiResponse]);
 
   const requestExplain = useCallback(async () => {
-    console.log(">>> REQUEST: Explain PDF (Full Document)");
-    
     if (!state.activeDocument) {
-      console.warn("No active document found for Explain");
       showNotification('Please upload a PDF first.', 'error');
       return;
     }
@@ -388,50 +529,33 @@ export function AppProvider({ children }) {
     dispatch({ type: 'CLEAR_ERROR' });
 
     try {
-      console.log("Calling API /explain with doc_id:", state.activeDocument.doc_id);
       const data = await api.explainText(
         state.activeDocument.doc_id,
         state.activeConversation?.conversation_id
       );
       
-      console.log("API /explain SUCCESS:", data);
+      const { content, suggestions } = parseAiResponse(data.response || "", data);
 
-      if (data.success && data.response) {
-        const aiMsg = {
-          id: 'explain-' + Date.now(),
-          role: 'assistant',
-          content: data.response,
-          sources: [],
-          timestamp: new Date().toISOString(),
-        };
-        dispatch({ type: 'ADD_MESSAGE', payload: aiMsg });
-      } else {
-        throw new Error(data.error || "Malformed API response: 'response' field missing");
-      }
+      const aiMsg = {
+        id: 'explain-' + Date.now(),
+        role: 'assistant',
+        content,
+        sources: [],
+        suggestions,
+        timestamp: new Date().toISOString(),
+      };
+      dispatch({ type: 'ADD_MESSAGE', payload: aiMsg });
     } catch (err) {
-      console.error("Summary failed:", err);
-      let errorMsg = err.response?.data?.error || 'Unable to summarize the document right now.';
-      if (err.response?.status === 404) {
-        errorMsg = "Session expired or backend restarted. Please re-upload your PDF to continue.";
-      }
+      const errorMsg = err.response?.data?.error || 'Unable to explain the document right now.';
       showNotification(errorMsg, 'error', 5000);
     } finally {
       dispatch({ type: 'SET_SENDING', payload: false });
     }
-  }, [state.activeDocument, state.activeConversation]);
+  }, [state.activeDocument, state.activeConversation, showNotification, parseAiResponse]);
 
   const requestRewrite = useCallback(async (text = "") => {
     if (!state.activeDocument) return;
     dispatch({ type: 'SET_SENDING', payload: true });
-
-    const userMsg = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: '✍️ Rewrite this document',
-      sources: [],
-      timestamp: new Date().toISOString(),
-    };
-    dispatch({ type: 'ADD_MESSAGE', payload: userMsg });
 
     try {
       const data = await api.rewriteText(
@@ -439,11 +563,15 @@ export function AppProvider({ children }) {
         state.activeConversation?.conversation_id,
         text
       );
+      
+      const { content, suggestions } = parseAiResponse(data.rewritten || "", data);
+
       const aiMsg = {
         id: 'rewrite-' + Date.now(),
         role: 'assistant',
-        content: data.rewritten,
+        content,
         sources: [],
+        suggestions,
         timestamp: new Date().toISOString(),
       };
       dispatch({ type: 'ADD_MESSAGE', payload: aiMsg });
@@ -452,7 +580,7 @@ export function AppProvider({ children }) {
     } finally {
       dispatch({ type: 'SET_SENDING', payload: false });
     }
-  }, [state.activeDocument, state.activeConversation]);
+  }, [state.activeDocument, state.activeConversation, parseAiResponse]);
 
   const requestQuiz = useCallback(async () => {
     if (!state.activeDocument) return;
@@ -492,50 +620,6 @@ export function AppProvider({ children }) {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
   }, [state.activeDocument]);
-
-  const loadConversation = useCallback(async (conv) => {
-    dispatch({ type: 'SET_ACTIVE_CONVERSATION', payload: conv });
-    dispatch({ type: 'SET_WORKSPACE_ACTIVE', payload: true });
-    dispatch({ type: 'SET_LOADING', payload: true });
-    try {
-      const data = await api.getConversation(conv.conversation_id);
-      dispatch({ type: 'SET_MESSAGES', payload: data.messages || [] });
-      
-      // Load existing study toolkit if available
-      if (data.study_toolkit) {
-        dispatch({ 
-          type: 'SET_STUDY_TOOLKIT', 
-          payload: { data: data.study_toolkit, isLoading: false, isOpen: false } 
-        });
-      } else {
-        dispatch({ 
-          type: 'SET_STUDY_TOOLKIT', 
-          payload: { data: null, isLoading: false, isOpen: false } 
-        });
-      }
-
-      if (data.doc_ids && data.doc_ids.length > 1) {
-        const activeDocs = data.doc_ids.map((id, idx) => ({
-          doc_id: id,
-          filename: data.filenames ? data.filenames[idx] : 'Document'
-        }));
-        dispatch({ type: 'SET_ACTIVE_DOCUMENTS', payload: activeDocs });
-        dispatch({ type: 'SET_ACTIVE_DOCUMENT', payload: activeDocs[0] });
-        dispatch({ type: 'SET_PDF_URL', payload: api.getPDFUrl(activeDocs[0].filename) });
-      } else if (data.doc_id && data.filename) {
-        dispatch({
-          type: 'SET_ACTIVE_DOCUMENT',
-          payload: { doc_id: data.doc_id, filename: data.filename, page_count: 0 },
-        });
-        dispatch({ type: 'SET_ACTIVE_DOCUMENTS', payload: [] });
-        dispatch({ type: 'SET_PDF_URL', payload: api.getPDFUrl(data.filename) });
-      }
-    } catch (err) {
-      dispatch({ type: 'SET_ERROR', payload: 'Failed to load conversation.' });
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
-  }, []);
 
   const removeConversation = useCallback(async (convId) => {
     try {
@@ -603,6 +687,7 @@ export function AppProvider({ children }) {
   }, []);
 
   const newAnalysis = useCallback(() => {
+    localStorage.removeItem('lastActiveConversationId');
     dispatch({ type: 'SET_ACTIVE_DOCUMENT', payload: null });
     dispatch({ type: 'SET_PDF_URL', payload: null });
     dispatch({ type: 'SET_ACTIVE_CONVERSATION', payload: null });
@@ -610,6 +695,7 @@ export function AppProvider({ children }) {
   }, []);
 
   const goHome = useCallback(() => {
+    localStorage.removeItem('lastActiveConversationId');
     dispatch({ type: 'SET_WORKSPACE_ACTIVE', payload: false });
     dispatch({ type: 'SET_ACTIVE_DOCUMENT', payload: null });
     dispatch({ type: 'SET_PDF_URL', payload: null });
@@ -633,6 +719,30 @@ export function AppProvider({ children }) {
     renameConversation,
     togglePinConversation,
     fetchHistory,
+    startMultiPDFChat: async (navigate) => {
+      if (state.selectedConvIds.length < 2) return;
+      dispatch({ type: 'SET_LOADING', payload: true });
+      dispatch({ type: 'CLEAR_ERROR' });
+      try {
+        const title = `Multi-PDF Session (${state.selectedConvIds.length} docs)`;
+        const data = await api.createConversation(state.selectedConvIds, title);
+        
+        // Deselect all
+        dispatch({ type: 'SET_SELECTED_CONV_IDS', payload: [] });
+        dispatch({ type: 'TOGGLE_SELECTION_MODE', payload: false });
+        
+        // Force refresh history to show new conversation
+        await fetchHistory();
+        
+        // Navigate and load
+        navigate(`/chat/${data.conversation_id}`);
+      } catch (err) {
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to start multi-PDF chat.' });
+        showNotification('Failed to create multi-PDF session.', 'error');
+      } finally {
+        dispatch({ type: 'SET_LOADING', payload: false });
+      }
+    },
     newAnalysis,
     goHome,
     showNotification,
@@ -749,91 +859,22 @@ export function AppProvider({ children }) {
         
         dispatch({ type: 'ADD_MESSAGE', payload: aiMsg });
       } catch (err) {
-        const errorMsg = err.response?.data?.error || 'Failed to simplify content.';
-        dispatch({ type: 'SET_ERROR', payload: errorMsg });
-        showNotification(errorMsg, 'error');
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to explain simply.' });
       } finally {
         dispatch({ type: 'SET_SENDING', payload: false });
       }
-    },
-    startMultiPDFChat: async (navigate) => {
-      if (state.selectedConvIds.length < 2) {
-        dispatch({ type: 'SET_ERROR', payload: "Select at least 2 PDFs to start multi-document chat." });
-        return;
-      }
-      
-      dispatch({ type: 'SET_LOADING', payload: true });
-      dispatch({ type: 'SET_LOADING_MESSAGE', payload: 'Preparing Multi-PDF Intelligence...' });
-      
-      try {
-        const selectedConvs = state.conversations.filter(c => state.selectedConvIds.includes(c.conversation_id));
-        
-        // Extract all unique doc_ids from selected conversations
-        const docIds = [...new Set(selectedConvs.flatMap(c => c.doc_ids || []))];
-        
-        if (docIds.length < 2) {
-          throw new Error("Selection contains less than 2 unique PDF documents.");
-        }
-
-        const data = await api.createConversation(docIds);
-        dispatch({ type: 'SET_LOADING_MESSAGE', payload: 'Combining document context...' });
-        
-        // Load all documents from store to get filenames
-        const allDocs = await Promise.all(docIds.map(id => api.getConversation(id).catch(() => null)));
-        
-        const activeDocs = selectedConvs.flatMap(c => {
-           if (!c.doc_ids) return [];
-           return c.doc_ids.map((id, idx) => ({
-             doc_id: id,
-             filename: c.filenames ? c.filenames[idx] : 'Document.pdf'
-           }));
-        });
-        
-        // Deduplicate activeDocs by doc_id
-        const uniqueActiveDocs = Array.from(new Map(activeDocs.map(d => [d.doc_id, d])).values());
-
-        dispatch({ type: 'SET_ACTIVE_DOCUMENTS', payload: uniqueActiveDocs });
-        dispatch({ type: 'SET_ACTIVE_DOCUMENT', payload: uniqueActiveDocs[0] });
-        dispatch({ type: 'SET_PDF_URL', payload: api.getPDFUrl(uniqueActiveDocs[0].filename) });
-        
-        const convInfo = {
-          conversation_id: data.conversation_id,
-          doc_ids: docIds,
-          title: `Multi-PDF Workspace (${docIds.length} PDFs)`,
-          created_at: new Date().toISOString()
-        };
-        
-        dispatch({ type: 'SET_ACTIVE_CONVERSATION', payload: convInfo });
-        dispatch({ type: 'ADD_CONVERSATION', payload: convInfo });
-        dispatch({ type: 'SET_WORKSPACE_ACTIVE', payload: true });
-        dispatch({ type: 'SET_MULTI_PDF_MODE', payload: true });
-        dispatch({ type: 'CLEAR_DOC_SELECTION' });
-        dispatch({ type: 'TOGGLE_SELECTION_MODE' });
-
-        const welcomeMsg = {
-          id: 'welcome-multi-' + Date.now(),
-          role: 'assistant',
-          content: `Multi-document workspace ready. 🟢\n\nI can now:\n• compare PDFs\n• find common topics\n• summarize across documents\n• answer using combined context\n\nAsk me anything about the selected documents.`,
-          timestamp: new Date().toISOString(),
-          isOld: true
-        };
-        
-        dispatch({ type: 'SET_MESSAGES', payload: [welcomeMsg] });
-        
-        if (navigate) {
-          navigate(`/chat/${data.conversation_id}`);
-        }
-        
-      } catch (err) {
-        dispatch({ type: 'SET_ERROR', payload: err.message || 'Failed to start multi-PDF chat.' });
-      } finally {
-        dispatch({ type: 'SET_LOADING', payload: false });
-        dispatch({ type: 'SET_LOADING_MESSAGE', payload: '' });
-      }
     }
-  }), [state, dispatch, uploadDocument, sendChatMessage, requestSummary, requestAdvancedTool, requestExplain, requestRewrite, requestQuiz, requestFlashcards, loadConversation, removeConversation, renameConversation, togglePinConversation, fetchHistory, newAnalysis, goHome]);
+  }), [state, uploadDocument, sendChatMessage, requestSummary, requestAdvancedTool, requestExplain, requestRewrite, requestQuiz, requestFlashcards, loadConversation, removeConversation, renameConversation, togglePinConversation, fetchHistory, newAnalysis, goHome, showNotification]);
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={value}>
+      {children}
+    </AppContext.Provider>
+  );
 }
 
-export const useApp = () => useContext(AppContext);
+export const useApp = () => {
+  const context = useContext(AppContext);
+  if (!context) throw new Error('useApp must be used within an AppProvider');
+  return context;
+};

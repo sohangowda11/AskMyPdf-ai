@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 from services.pdf_service import extract_text, chunk_text, get_page_count
 from store import store
 from config import Config
+from utils.auth import require_auth
 
 upload_bp = Blueprint('upload', __name__)
 ALLOWED_EXTENSIONS = {'pdf'}
@@ -16,29 +17,38 @@ def allowed_file(filename):
 
 logger = logging.getLogger(__name__)
 
-def background_process_pdf(filepath, filename, doc_id):
-    """Heavy lifting happens here without blocking the user."""
+def background_process_pdf(filepath, filename, doc_id, user_id):
+    """Heavy lifting happens here with explicit pipeline logging."""
+    import logging
+    logger = logging.getLogger(__name__)
     try:
-        logger.info(f" [BG] Starting extraction for {doc_id}")
+        logger.info(f"!!! [PIPELINE_BG_PROCESS] STARTING: DocID {doc_id} for User {user_id}")
         pages = extract_text(filepath)
         chunks = chunk_text(pages)
         
+        logger.info(f"!!! [PIPELINE_BG_PROCESS] Saving {len(pages)} pages and {len(chunks)} chunks to DB")
         # Update the existing document record with the extracted text and chunks
-        # This assumes SupabaseStore.add_document can handle updates or we add an update method
-        # For simplicity, we'll just call add_document again if it handles upserts
-        # but let's assume we want a specific 'update' for background completion
-        store.add_document(filename, filepath, pages, chunks, doc_id=doc_id) 
-        # Note: In our current SupabaseStore, add_document uses insert. 
-        # I should add an 'upsert' or 'update' logic. 
-        # Let's fix SupabaseStore to handle this.
+        store.add_document(filename, filepath, pages, chunks, doc_id=doc_id, user_id=user_id) 
         
-        logger.info(f" [BG] Successfully processed {doc_id}")
+        logger.info(f"!!! [PIPELINE_BG_PROCESS] COMPLETE: DocID {doc_id} is now AI-ready")
     except Exception as e:
-        logger.error(f" [BG] Processing failed for {doc_id}: {str(e)}")
+        logger.error(f"!!! [PIPELINE_BG_PROCESS] FAILED: {doc_id} -> {str(e)}")
 
 @upload_bp.route('/upload', methods=['POST'])
+@require_auth
 def upload_file():
-    logger.info(">>> START: /upload API REQUEST")
+    logger.info("!!! [PIPELINE_UPLOAD] 1. New Upload Request Received")
+    
+    # Extract user_id from the authenticated request
+    try:
+        from flask import g
+        user_id = g.user.id
+    except Exception as e:
+        user_id = None
+        
+    if not user_id:
+        logger.error("!!! [PIPELINE_UPLOAD] Unauthorized: No UserID")
+        return jsonify({'error': 'Unauthorized - No valid user ID found'}), 401
     
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -62,26 +72,28 @@ def upload_file():
         filepath = os.path.join(Config.UPLOAD_FOLDER, filename)
         counter += 1
 
-    logger.info(f"Saving file: {filename}")
+    logger.info(f"!!! [PIPELINE_UPLOAD] 2. Saving file to disk: {filepath}")
     file.save(filepath)
 
     try:
         # QUICK PATH: Get metadata and return immediately
         page_count = get_page_count(filepath)
+        logger.info(f"!!! [PIPELINE_UPLOAD] 3. Metadata extracted: {page_count} pages")
         
-        # Create an 'Empty' document entry first so it exists in the UI
-        # We pass empty pages/chunks for now
-        doc_id = store.add_document(filename, filepath, [], [])
+        # Create an 'Empty' document entry first
+        doc_id = store.add_document(filename, filepath, [], [], user_id=user_id)
+        logger.info(f"!!! [PIPELINE_UPLOAD] 4. DB record initialized: {doc_id}")
         
         title = filename.rsplit('.', 1)[0].replace('_', ' ')
         conv_id = store.create_conversation(doc_id, title=title)
 
         # FIRE AND FORGET: Start background processing
-        thread = threading.Thread(target=background_process_pdf, args=(filepath, filename, doc_id))
+        thread = threading.Thread(target=background_process_pdf, args=(filepath, filename, doc_id, user_id))
         thread.daemon = True
         thread.start()
 
-        logger.info(f"UPLOAD QUICK SUCCESS: {doc_id}")
+        logger.info(f"!!! [PIPELINE_UPLOAD] 5. Background thread started. Returning response.")
+
         return jsonify({
             'doc_id': doc_id,
             'conversation_id': conv_id,

@@ -1,12 +1,15 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from services.ai_service import generate_quiz
 from store import store
+from utils.auth import require_auth
 
 quiz_bp = Blueprint('quiz', __name__)
 
 
 @quiz_bp.route('/quiz', methods=['POST'])
+@require_auth
 def get_quiz():
+    user_id = g.user.id
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -17,7 +20,7 @@ def get_quiz():
     if not doc_id:
         return jsonify({'error': 'Missing doc_id'}), 400
 
-    doc = store.get_document(doc_id)
+    doc = store.get_document(doc_id, user_id=user_id)
     if not doc:
         return jsonify({'error': 'Session expired. Please re-upload your PDF to generate a quiz.'}), 404
 

@@ -4,12 +4,17 @@ import { FileText, Zap, HelpCircle, Loader2, Lightbulb, Sparkles } from 'lucide-
 import { useApp } from '../../hooks/useApp';
 
 const SUGGESTIONS = [
-  { id: 'summarize', label: 'Give me a quick summary', icon: <FileText size={14} />, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-500/10' },
-  { id: 'explain_simply', label: 'Explain in simple words', icon: <Lightbulb size={14} />, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-500/10' }
+  { id: 'summarize', label: 'Summarize PDF', icon: <FileText size={14} />, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-500/10' },
+  { id: 'explain_simply', label: 'Explain Simply', icon: <Lightbulb size={14} />, color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-500/10' },
+  { id: 'quiz', label: 'Generate Quiz', icon: <HelpCircle size={14} />, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-500/10' },
+  { id: 'flashcards', label: 'Create Flashcards', icon: <Zap size={14} />, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-500/10' },
+  { id: 'key_topics', label: 'Key Topics', icon: <Sparkles size={14} />, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
+  { id: 'formulas', label: 'Extract Formulas', icon: <Zap size={14} />, color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-500/10' },
+  { id: 'questions', label: 'Important Questions', icon: <HelpCircle size={14} />, color: 'text-cyan-500', bg: 'bg-cyan-50 dark:bg-cyan-500/10' }
 ];
 
 export default function SuggestionChips({ onSelect }) {
-  const { state, requestSummary, requestAdvancedTool, requestExplainSimply } = useApp();
+  const { state, requestSummary, requestAdvancedTool, requestExplainSimply, requestQuiz, requestFlashcards } = useApp();
   const { isGenerating } = state;
 
   const handleAction = async (item) => {
@@ -19,6 +24,10 @@ export default function SuggestionChips({ onSelect }) {
       await requestSummary();
     } else if (item.id === 'explain_simply') {
       await requestExplainSimply();
+    } else if (item.id === 'quiz') {
+      await requestQuiz();
+    } else if (item.id === 'flashcards') {
+      await requestFlashcards();
     } else {
       await requestAdvancedTool(item.id);
     }

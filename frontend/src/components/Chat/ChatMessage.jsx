@@ -52,56 +52,67 @@ const ChatMessage = memo(({ message }) => {
   const formatContent = (text) => {
     if (!text) return "";
     
-    // Aggressive cleaning of markdown artifacts
-    let clean = text
-      .replace(/\*\*(.*?)\*\*/g, '$1')
-      .replace(/##\s+(.*?)/g, '$1')
-      .replace(/###\s+(.*?)/g, '$1')
-      .replace(/`(.*?)`/g, '$1')
-      .replace(/SUGGESTIONS:.*$/s, '');
+    // Remove the trailing suggestions part from the display text
+    let clean = text.replace(/SUGGESTIONS:.*$/s, '');
 
-    const lines = clean.split('\n').filter(line => line.trim() !== '');
+    const lines = clean.split('\n');
     
     return lines.map((line, idx) => {
       const trimmed = line.trim();
-      const isDocHeader = trimmed.startsWith('### [DOCUMENT');
+      if (!trimmed && idx !== lines.length - 1) return <div key={idx} className="h-2" />;
+
+      const isDocHeader = trimmed.startsWith('### [SOURCE');
+      const isHeading1 = trimmed.startsWith('# ');
+      const isHeading2 = trimmed.startsWith('## ');
+      const isHeading3 = trimmed.startsWith('### ') && !isDocHeader;
       const isBullet = trimmed.startsWith('•') || trimmed.startsWith('-') || trimmed.startsWith('*');
-      const content = isBullet ? trimmed.replace(/^[•\-*]\s*/, '') : trimmed;
-      const isIntro = trimmed.endsWith(':') && trimmed.length < 120;
+      
+      // Handle Bolding within lines
+      const renderLineWithBold = (str) => {
+        const parts = str.split(/(\*\*.*?\*\*)/g);
+        return parts.map((part, i) => {
+          if (part.startsWith('**') && part.endsWith('**')) {
+            return <strong key={i} className="font-black text-slate-900 dark:text-white">{part.slice(2, -2)}</strong>;
+          }
+          return part;
+        });
+      };
 
       if (isDocHeader) {
         return (
           <div key={idx} className="flex items-center gap-3 my-4 first:mt-0 pb-1 border-b border-orange-500/10 gpu-accelerated">
             <div className="px-2 py-0.5 bg-orange-500 text-white text-[9px] font-black uppercase tracking-widest rounded">Source</div>
-            <p className="text-[13px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-widest">
-              {typeof trimmed === 'string' ? trimmed.replace('### ', '') : JSON.stringify(trimmed).replace('### ', '')}
+            <p className="text-[12px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-widest">
+              {trimmed.replace('### ', '')}
             </p>
           </div>
         );
       }
 
-      if (isIntro) {
+      if (isHeading1 || isHeading2 || isHeading3) {
+        const level = isHeading1 ? 'text-xl' : isHeading2 ? 'text-lg' : 'text-md';
         return (
-          <p key={idx} className="text-[14px] leading-[1.7] font-black text-slate-800 dark:text-slate-200 mb-2 mt-4 first:mt-0">
-            {content}
+          <p key={idx} className={`${level} font-black text-slate-900 dark:text-slate-100 mb-2 mt-6 first:mt-0 uppercase tracking-tight`}>
+            {trimmed.replace(/^#+\s+/, '')}
           </p>
         );
       }
 
       if (isBullet) {
+        const content = trimmed.replace(/^[•\-*]\s*/, '');
         return (
           <div key={idx} className="flex gap-3 items-start my-2 pl-1 group/bullet">
-            <div className="w-1 h-1 bg-orange-500 rounded-full mt-[8px] flex-shrink-0 group-hover/bullet:scale-150 transition-transform" />
+            <div className="w-1.5 h-1.5 bg-orange-500 rounded-full mt-[7px] flex-shrink-0 group-hover/bullet:scale-125 transition-transform" />
             <p className="text-[14px] leading-[1.7] font-medium text-slate-700 dark:text-slate-300">
-              {content}
+              {renderLineWithBold(content)}
             </p>
           </div>
         );
       }
 
       return (
-        <p key={idx} className="text-[14px] leading-[1.7] font-medium text-slate-700 dark:text-slate-300 mb-4 last:mb-0">
-          {content}
+        <p key={idx} className="text-[14px] leading-[1.7] font-medium text-slate-700 dark:text-slate-300 mb-3 last:mb-0">
+          {renderLineWithBold(trimmed)}
         </p>
       );
     });
@@ -124,19 +135,19 @@ const ChatMessage = memo(({ message }) => {
       </div>
 
       {/* Structured Content Bubble */}
-      <div className={`${isAi ? 'max-w-[75%]' : 'max-w-[65%]'} group ${isAi ? 'text-left' : 'text-right'}`}>
-        <div className={`px-5 py-4 rounded-[24px] transition-all duration-500 ${
+      <div className={`${isAi ? 'max-w-[85%]' : 'max-w-[75%]'} group ${isAi ? 'text-left' : 'text-right'} w-full`}>
+        <div className={`px-5 py-4 rounded-[24px] shadow-sm ${
           isAi 
-          ? 'bg-slate-50/50 dark:bg-[#1b1f2a] border border-slate-100 dark:border-slate-800/60 rounded-tl-none hover:border-orange-500/20' 
-          : 'bg-orange-600 text-white rounded-tr-none shadow-lg shadow-orange-900/10 hover:shadow-orange-900/20'
-        }`}>
+          ? 'bg-slate-50/50 dark:bg-[#1b1f2a] border border-slate-100 dark:border-slate-800/60 rounded-tl-none' 
+          : 'bg-orange-600 text-white rounded-tr-none shadow-orange-900/10'
+        } break-words overflow-visible`}>
           {isAi ? (
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 w-full">
               {formatContent(String(displayText))}
               {isStreaming && <span className="inline-block w-1.5 h-4 bg-orange-500 ml-1 animate-pulse" />}
             </div>
           ) : (
-            <p className="text-[14px] font-bold leading-relaxed">{typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}</p>
+            <p className="text-[14px] font-bold leading-relaxed break-words">{typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}</p>
           )}
         </div>
 
@@ -184,12 +195,12 @@ const ChatMessage = memo(({ message }) => {
           </motion.div>
         )}
 
-        {/* Smart Follow-Ups */}
+        {/* Smart Follow-Ups (Horizontal Chips) */}
         {isAi && !isStreaming && message.suggestions && message.suggestions.length > 0 && (
           <motion.div 
             initial={{ opacity: 0, y: 5 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mt-4 flex flex-col gap-2"
+            className="mt-4 flex gap-2 overflow-x-auto pb-2 scrollbar-hide no-scrollbar"
           >
             {message.suggestions.map((suggestion, idx) => (
               <button
@@ -197,7 +208,7 @@ const ChatMessage = memo(({ message }) => {
                 onClick={() => {
                    window.dispatchEvent(new CustomEvent('send-suggestion', { detail: suggestion }));
                 }}
-                className="self-start text-left bg-slate-50 dark:bg-[#151821] border border-slate-100 dark:border-slate-800/60 text-[12px] font-bold text-slate-600 dark:text-slate-400 px-4 py-2 rounded-xl hover:bg-orange-50 dark:hover:bg-orange-500/10 hover:border-orange-200 dark:hover:border-orange-500/30 hover:text-orange-600 dark:hover:text-orange-400 transition-all shadow-sm"
+                className="flex-shrink-0 bg-white dark:bg-[#151821] border border-slate-100 dark:border-slate-800/60 text-[11px] font-bold text-slate-600 dark:text-slate-400 px-4 py-2 rounded-xl hover:bg-orange-50 dark:hover:bg-orange-500/10 hover:border-orange-200 dark:hover:border-orange-500/30 hover:text-orange-600 dark:hover:text-orange-400 transition-all shadow-sm"
               >
                 {suggestion}
               </button>

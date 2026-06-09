@@ -1,6 +1,7 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from services.ai_service import summarize
 from store import store
+from utils.auth import require_auth
 
 import logging
 
@@ -9,7 +10,9 @@ logger = logging.getLogger(__name__)
 
 
 @summary_bp.route('/summary', methods=['POST'])
+@require_auth
 def get_summary():
+    user_id = g.user.id
     data = request.get_json()
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -22,9 +25,9 @@ def get_summary():
     if not doc_id:
         return jsonify({'error': 'Please upload a PDF first.'}), 400
 
-    doc = store.get_document(doc_id)
+    doc = store.get_document(doc_id, user_id=user_id)
     if not doc:
-        logger.error(f"Document {doc_id} not found in store")
+        logger.error(f"Document {doc_id} not found in store for user {user_id}")
         return jsonify({'error': 'Session expired or document not found. Please re-upload your PDF.'}), 404
 
     try:
@@ -44,7 +47,7 @@ def get_summary():
             suggestions = [s.strip().replace('[', '').replace(']', '') for s in raw_suggs.split("|") if s.strip()]
 
         if conv_id:
-            store.update_document_summary(doc_id, clean_summary)
+            store.update_document_summary(doc_id, clean_summary, user_id=user_id)
             # Add message to history manually if needed, but the UI usually handles this via summary display
 
         return jsonify({
@@ -52,5 +55,6 @@ def get_summary():
             'suggestions': suggestions
         }), 200
     except Exception as e:
-        logger.error(f"AI Summarization failed: {str(e)}")
-        return jsonify({'error': 'Unable to summarize the document right now.'}), 500
+        error_msg = str(e)
+        logger.error(f"!!! [SUMMARY_PIPELINE] AI Summarization failed: {error_msg}")
+        return jsonify({'error': 'AI Summarization failed. The document might be too large or the API quota was exceeded.'}), 500

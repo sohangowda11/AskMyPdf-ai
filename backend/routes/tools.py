@@ -1,13 +1,16 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from services.ai_service import rewrite_text, explain_document
 from store import store
+from utils.auth import require_auth
 import logging
 
 tools_bp = Blueprint('tools', __name__)
 logger = logging.getLogger(__name__)
 
 @tools_bp.route('/explain', methods=['POST'])
+@require_auth
 def explain():
+    user_id = g.user.id
     logger.info(">>> START: /explain API REQUEST")
     try:
         data = request.get_json()
@@ -20,7 +23,7 @@ def explain():
             logger.warning("No doc_id provided")
             return jsonify({'success': False, 'error': 'Please upload a PDF first.'}), 400
 
-        doc = store.get_document(doc_id)
+        doc = store.get_document(doc_id, user_id=user_id)
         if not doc:
             logger.error(f"Document {doc_id} not found in store")
             return jsonify({'success': False, 'error': 'PDF document session expired. Please re-upload.'}), 404
@@ -64,16 +67,14 @@ def explain():
         logger.error(f"CRITICAL ERROR in /explain: {str(e)}", exc_info=True)
         return jsonify({
             'success': False, 
-            'error': f'Backend error: {str(e)}'
+            'error': 'AI explanation failed. The document might be too large or the API quota was exceeded.'
         }), 500
-
-    except Exception as e:
-        logger.error(f"CRITICAL ERROR in /explain: {str(e)}", exc_info=True)
-        return jsonify({'success': False, 'error': 'Unable to generate explanation right now.'}), 500
 
 
 @tools_bp.route('/rewrite', methods=['POST'])
+@require_auth
 def rewrite():
+    user_id = g.user.id
     logger.info(">>> /rewrite endpoint called")
     try:
         data = request.get_json()
@@ -84,8 +85,10 @@ def rewrite():
         if not text:
             return jsonify({'success': False, 'error': 'Please select text in the PDF to rewrite.'}), 400
 
-        if not doc_id:
-            return jsonify({'success': False, 'error': 'Document context missing.'}), 400
+        # Ownership check for rewrite
+        doc = store.get_document(doc_id, user_id=user_id)
+        if not doc:
+            return jsonify({'success': False, 'error': 'Document context missing or access denied.'}), 403
 
         logger.info(f"Rewriting text (len: {len(text)})")
         rewritten = rewrite_text(text)

@@ -1,6 +1,10 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Routes, Route, useNavigate, Navigate } from 'react-router-dom';
 import { useApp } from './hooks/useApp';
+import { useAuth } from './context/AuthContext';
+
+// Components
 import Sidebar from './components/Sidebar/Sidebar';
 import Header from './components/Header/Header';
 import PDFViewer from './components/PDFViewer/PDFViewer';
@@ -8,6 +12,11 @@ import ChatPanel from './components/Chat/ChatPanel';
 import Modal from './components/common/Modal';
 import Landing from './components/Landing/Landing';
 import ErrorBoundary from './components/common/ErrorBoundary';
+import DedicatedChatPage from './components/Chat/DedicatedChatPage';
+import UtilityPanel from './components/common/UtilityPanel';
+import AuthForms from './components/Auth/AuthForms';
+
+// Icons
 import { CheckCircle, XCircle, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
 
 function QuizModal() {
@@ -156,59 +165,87 @@ const ResizeHandle = ({ onDrag, vertical = false }) => (
   </div>
 );
 
-import { Routes, Route, useNavigate } from 'react-router-dom';
-import DedicatedChatPage from './components/Chat/DedicatedChatPage';
-import UtilityPanel from './components/common/UtilityPanel';
+const ProtectedRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+};
+
+const Workspace = ({ sidebarWidth, setSidebarWidth, chatWidth, setChatWidth }) => (
+  <div className="flex-1 flex overflow-hidden">
+    <div style={{ width: sidebarWidth }} className="flex-shrink-0 h-full">
+       <Sidebar />
+    </div>
+    <ResizeHandle onDrag={(d) => setSidebarWidth(w => Math.max(240, Math.min(400, w + d)))} />
+
+    <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#0a0a0f]">
+      <Header />
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full"><PDFViewer /></div>
+        <ResizeHandle onDrag={(d) => setChatWidth(w => Math.max(380, Math.min(800, w - d)))} />
+        <div style={{ width: chatWidth }} className="flex-shrink-0 flex flex-col min-h-0"><ChatPanel /></div>
+      </div>
+    </div>
+  </div>
+);
 
 export default function App() {
-  const { state, fetchHistory } = useApp();
+  const { state } = useApp();
+  const { user } = useAuth();
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [chatWidth, setChatWidth] = useState(480);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
-
-  const Workspace = () => (
-    <div className="flex-1 flex overflow-hidden">
-      <div style={{ width: sidebarWidth }} className="flex-shrink-0 h-full">
-         <Sidebar />
-      </div>
-      <ResizeHandle onDrag={(d) => setSidebarWidth(w => Math.max(240, Math.min(400, w + d)))} />
-
-      <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-[#0a0a0f]">
-        <Header />
-        <div className="flex-1 flex min-h-0 overflow-hidden">
-          <div className="flex-1 min-w-0"><PDFViewer /></div>
-          <ResizeHandle onDrag={(d) => setChatWidth(w => Math.max(380, Math.min(800, w - d)))} />
-          <div style={{ width: chatWidth }} className="flex-shrink-0"><ChatPanel /></div>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
     <ErrorBoundary>
-      <div className="h-screen flex overflow-hidden bg-white dark:bg-[#0f1117] transition-colors duration-500">
+      <div className={`flex flex-col bg-white dark:bg-[#0f1117] transition-colors duration-500 ${user ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
         <AnimatePresence mode="wait">
-          {!state.isWorkspaceActive ? (
-            <Landing key="landing" />
+          {!user ? (
+            <Landing key="auth" mode="auth" />
           ) : (
             <motion.div 
               key="workspace-container"
-              className="flex-1 flex overflow-hidden w-full h-full"
+              className="flex-1 flex overflow-hidden w-full h-full relative"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
             >
-               <Routes>
-                 <Route path="/" element={<Workspace />} />
-                 <Route path="/chat/:conversationId" element={<DedicatedChatPage />} />
-               </Routes>
-               
-               <AnimatePresence>
-                 {state.utilityPanel.isOpen && <UtilityPanel />}
-               </AnimatePresence>
+              <Routes>
+                <Route path="/" element={
+                  <Workspace 
+                    sidebarWidth={sidebarWidth} 
+                    setSidebarWidth={setSidebarWidth} 
+                    chatWidth={chatWidth} 
+                    setChatWidth={setChatWidth} 
+                  />
+                } />
+                <Route path="/chat/:conversationId" element={<DedicatedChatPage />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+              
+              <AnimatePresence>
+                {state.utilityPanel.isOpen && <UtilityPanel />}
+              </AnimatePresence>
+              
+              <AnimatePresence>
+                {state.isLoading && (
+                  <motion.div 
+                    key="loading"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 z-50 flex items-center justify-center bg-white/90 dark:bg-[#0a0a0f]/90 backdrop-blur-sm"
+                  >
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="w-12 h-12 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin" />
+                      <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Restoring Workspace</span>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
         </AnimatePresence>
